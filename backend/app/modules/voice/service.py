@@ -311,13 +311,14 @@ class VoiceService:
         self,
         user_id: uuid.UUID,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[VoiceCommandLogResponse]:
-        bounded = max(1, min(limit, 200))
         result = await self.db.execute(
             select(VoiceCommand)
             .where(VoiceCommand.user_id == user_id)
             .order_by(VoiceCommand.created_at.desc())
-            .limit(bounded)
+            .limit(limit)
+            .offset(offset)
         )
         commands = result.scalars().all()
         return [VoiceCommandLogResponse.model_validate(item) for item in commands]

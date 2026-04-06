@@ -101,11 +101,14 @@ class StudyService:
         self,
         user_id: uuid.UUID,
         subject_id: uuid.UUID | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[StudySessionResponse]:
         query = select(StudySession).where(StudySession.user_id == user_id)
         if subject_id:
             query = query.where(StudySession.subject_id == subject_id)
         query = query.order_by(desc(StudySession.session_date), desc(StudySession.created_at))
+        query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         return [StudySessionResponse.model_validate(item) for item in result.scalars().all()]
 
@@ -147,11 +150,14 @@ class StudyService:
         self,
         user_id: uuid.UUID,
         subject_id: uuid.UUID | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[RevisionCardResponse]:
         query = select(RevisionCard).where(RevisionCard.user_id == user_id)
         if subject_id:
             query = query.where(RevisionCard.subject_id == subject_id)
         query = query.order_by(RevisionCard.next_review_date.asc(), RevisionCard.created_at.asc())
+        query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         return [RevisionCardResponse.model_validate(item) for item in result.scalars().all()]
 
@@ -253,11 +259,14 @@ class StudyService:
         self,
         user_id: uuid.UUID,
         subject_id: uuid.UUID | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[MockTestResponse]:
         query = select(MockTest).where(MockTest.user_id == user_id)
         if subject_id:
             query = query.where(MockTest.subject_id == subject_id)
         query = query.order_by(MockTest.date.desc(), MockTest.created_at.desc())
+        query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         return [MockTestResponse.model_validate(item) for item in result.scalars().all()]
 

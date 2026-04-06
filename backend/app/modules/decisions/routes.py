@@ -35,11 +35,13 @@ async def create_decision(
 
 @router.get("")
 async def list_decisions(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = DecisionService(db)
-    rows = await service.list_decisions(user_id=user_id)
+    rows = await service.list_decisions(user_id=user_id, limit=limit, offset=offset)
     return success([item.model_dump(mode="json") for item in rows])
 
 

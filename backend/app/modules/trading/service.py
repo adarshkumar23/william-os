@@ -117,6 +117,8 @@ class TradingService:
         date_from: date | None = None,
         date_to: date | None = None,
         action: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[TradeLogResponse]:
         query = select(TradeLog).where(TradeLog.user_id == user_id)
         if symbol:
@@ -129,6 +131,7 @@ class TradingService:
             query = query.where(TradeLog.action == action.lower().strip())
 
         query = query.order_by(TradeLog.trade_date.desc(), TradeLog.created_at.desc())
+        query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         return [TradeLogResponse.model_validate(row) for row in result.scalars().all()]
 

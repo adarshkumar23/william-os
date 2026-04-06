@@ -200,6 +200,8 @@ class SchedulerService:
         if not plan:
             raise NotFoundError("DailyPlan", str(plan_date))
 
+        await self._assert_no_overlap(plan, data.start_time, data.end_time)
+
         start_dt = datetime.combine(plan_date, data.start_time)
         end_dt = datetime.combine(plan_date, data.end_time)
         duration = int((end_dt - start_dt).total_seconds() / 60)
@@ -229,6 +231,13 @@ class SchedulerService:
         block = await self._get_block_for_user(user_id, block_id)
         if not block:
             raise NotFoundError("ScheduleBlock", str(block_id))
+
+        if data.start_time is not None or data.end_time is not None:
+            new_start = data.start_time or block.start_time
+            new_end = data.end_time or block.end_time
+            plan = await self.db.get(DailyPlan, block.plan_id)
+            if plan:
+                await self._assert_no_overlap(plan, new_start, new_end, exclude_id=block_id)
 
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(block, field, value)
@@ -437,6 +446,25 @@ class SchedulerService:
         )
         return result.scalar_one_or_none()
 
+    async def _assert_no_overlap(
+        self,
+        plan: DailyPlan,
+        start: time,
+        end: time,
+        exclude_id: uuid.UUID | None = None,
+    ) -> None:
+        """Raise ValidationError if the new time range overlaps any existing block."""
+        for block in plan.blocks:
+            if exclude_id and block.id == exclude_id:
+                continue
+            if block.status in (BlockStatus.RESCHEDULED, BlockStatus.SKIPPED):
+                continue
+            if start < block.end_time and end > block.start_time:
+                raise ValidationError(
+                    f"Time conflict with existing block '{block.title}' "
+                    f"({block.start_time}-{block.end_time})"
+                )
+
     async def _get_block(self, block_id: uuid.UUID) -> ScheduleBlock | None:
         result = await self.db.execute(select(ScheduleBlock).where(ScheduleBlock.id == block_id))
         return result.scalar_one_or_none()
@@ -462,17 +490,54 @@ class SchedulerService:
     async def _build_generation_context(
         self, user_id: uuid.UUID, request: ScheduleGenerateRequest
     ) -> dict:
-        """Gather all context for AI schedule generation."""
-        # TODO: Pull from habits, fitness, sleep, email modules
+        """Gather real context from user profile and modules for AI schedule generation."""
+        from app.modules.auth.models import User
+        from app.modules.habits.service import HabitsService
+        from app.modules.sleep.service import SleepService
+
+        user = await self.db.get(User, user_id)
+        if not user:
+            raise NotFoundError("User", str(user_id))
+
+        habits_service = HabitsService(self.db)
+        try:
+            habits = await habits_service.list_habits(user_id, active_only=True)
+            habit_context = [
+                {
+                    "name": h.name,
+                    "category": h.schedule_category,
+                    "preferred_time": str(h.preferred_time) if h.preferred_time else None,
+                    "duration_minutes": h.duration_minutes,
+                }
+                for h in habits
+                if h.auto_schedule
+            ]
+        except Exception:
+            habit_context = []
+
+        energy_note = "peak 09:00-12:00, dip 14:00-15:00, second wind 16:00-18:00"
+        try:
+            sleep_service = SleepService(self.db)
+            sleep_stats = await sleep_service.get_sleep_stats(user_id)
+            if sleep_stats.avg_quality_30d > 0:
+                energy_note = (
+                    f"avg sleep quality {sleep_stats.avg_quality_30d}/10, "
+                    f"avg bedtime {sleep_stats.avg_bedtime}, "
+                    f"avg duration {sleep_stats.avg_duration:.0f} min"
+                )
+        except Exception:
+            pass
+
         return {
-            "wake_time": "06:00",
-            "sleep_time": "22:30",
-            "timezone": "Asia/Kolkata",
+            "date": request.target_date.isoformat(),
+            "wake_time": user.wake_time,
+            "sleep_time": user.sleep_time,
+            "timezone": user.timezone,
             "fixed_blocks": [],
-            "habits": [],
+            "habits": habit_context,
             "priorities": request.extra_context.get("priorities", []),
             "yesterday_summary": {},
-            "energy_pattern": "peak 09:00-12:00, dip 14:00-15:00, second wind 16:00-18:00",
+            "energy_pattern": energy_note,
         }
 
     def _build_prompt(self, context: dict) -> str:

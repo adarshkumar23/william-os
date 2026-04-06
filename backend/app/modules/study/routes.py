@@ -99,11 +99,18 @@ async def create_session(
 @router.get("/sessions")
 async def list_sessions(
     subject_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = StudyService(db)
-    sessions = await service.list_sessions(user_id=user_id, subject_id=subject_id)
+    sessions = await service.list_sessions(
+        user_id=user_id,
+        subject_id=subject_id,
+        limit=limit,
+        offset=offset,
+    )
     return success([item.model_dump(mode="json") for item in sessions])
 
 
@@ -155,11 +162,18 @@ async def create_card(
 @router.get("/cards")
 async def list_cards(
     subject_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = StudyService(db)
-    cards = await service.list_cards(user_id=user_id, subject_id=subject_id)
+    cards = await service.list_cards(
+        user_id=user_id,
+        subject_id=subject_id,
+        limit=limit,
+        offset=offset,
+    )
     return success([item.model_dump(mode="json") for item in cards])
 
 
@@ -235,11 +249,18 @@ async def create_mock(
 @router.get("/mocks")
 async def list_mocks(
     subject_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = StudyService(db)
-    mocks = await service.list_mock_tests(user_id=user_id, subject_id=subject_id)
+    mocks = await service.list_mock_tests(
+        user_id=user_id,
+        subject_id=subject_id,
+        limit=limit,
+        offset=offset,
+    )
     return success([item.model_dump(mode="json") for item in mocks])
 
 

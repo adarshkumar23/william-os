@@ -36,6 +36,8 @@ async def list_entries(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     mood: JournalMood | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -45,6 +47,8 @@ async def list_entries(
         date_from=date_from,
         date_to=date_to,
         mood_filter=mood,
+        limit=limit,
+        offset=offset,
     )
     return success([entry.model_dump(mode="json") for entry in entries])
 

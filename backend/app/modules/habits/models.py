@@ -10,7 +10,16 @@ from datetime import date, datetime, time
 from enum import Enum
 
 from sqlalchemy import (
-    Boolean, Date, Enum as SAEnum, Float, ForeignKey, Integer, String, Text, Time,
+    Boolean,
+    Date,
+    Enum as SAEnum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -64,7 +73,17 @@ class Habit(Base):
 
 class HabitCheckIn(Base):
     __tablename__ = "habit_check_ins"
-    __table_args__ = {"schema": "habits"}
+    __table_args__ = (
+        UniqueConstraint(
+            "habit_id",
+            "check_date",
+            name="uq_habit_check_ins_habit_date",
+        ),
+        {
+            "schema": "habits",
+            "info": {"constraint_name": "uq_habit_check_ins_habit_date"},
+        },
+    )
 
     habit_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("habits.habits.id", ondelete="CASCADE"),

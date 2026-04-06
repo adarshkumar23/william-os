@@ -70,14 +70,18 @@ class SleepService:
         self,
         user_id: uuid.UUID,
         days: int = 30,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[SleepRecordResponse]:
         cutoff = date.today() - timedelta(days=max(1, days) - 1)
-        result = await self.db.execute(
+        query = (
             select(SleepRecord)
             .where(SleepRecord.user_id == user_id)
             .where(SleepRecord.sleep_date >= cutoff)
             .order_by(SleepRecord.sleep_date.desc())
         )
+        query = query.limit(limit).offset(offset)
+        result = await self.db.execute(query)
         return [SleepRecordResponse.model_validate(item) for item in result.scalars().all()]
 
     async def get_sleep_stats(self, user_id: uuid.UUID) -> SleepStats:

@@ -200,13 +200,14 @@ class MessagingService:
         self,
         user_id: uuid.UUID,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[NotificationLogResponse]:
-        bounded_limit = max(1, min(limit, 200))
         result = await self.db.execute(
             select(NotificationLog)
             .where(NotificationLog.user_id == user_id)
             .order_by(NotificationLog.sent_at.desc(), NotificationLog.created_at.desc())
-            .limit(bounded_limit)
+            .limit(limit)
+            .offset(offset)
         )
         logs = result.scalars().all()
         return [NotificationLogResponse.model_validate(log) for log in logs]

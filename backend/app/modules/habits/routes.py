@@ -38,11 +38,18 @@ async def create_habit(
 @router.get("")
 async def list_habits(
     active_only: bool = Query(default=True),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = HabitsService(db)
-    habits = await service.list_habits(user_id, active_only=active_only)
+    habits = await service.list_habits(
+        user_id,
+        active_only=active_only,
+        limit=limit,
+        offset=offset,
+    )
     return success([habit.model_dump(mode="json") for habit in habits])
 
 

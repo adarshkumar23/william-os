@@ -41,9 +41,18 @@ class DecisionService:
         await self.db.refresh(decision)
         return DecisionResponse.model_validate(decision)
 
-    async def list_decisions(self, user_id: uuid.UUID) -> list[DecisionResponse]:
+    async def list_decisions(
+        self,
+        user_id: uuid.UUID,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[DecisionResponse]:
         result = await self.db.execute(
-            select(Decision).where(Decision.user_id == user_id).order_by(Decision.created_at.desc())
+            select(Decision)
+            .where(Decision.user_id == user_id)
+            .order_by(Decision.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
         return [DecisionResponse.model_validate(row) for row in result.scalars().all()]
 

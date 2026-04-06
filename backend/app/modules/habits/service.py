@@ -48,12 +48,15 @@ class HabitsService:
         self,
         user_id: uuid.UUID,
         active_only: bool = True,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[HabitResponse]:
         query = select(Habit).where(Habit.user_id == user_id)
         if active_only:
             query = query.where(Habit.is_active.is_(True))
 
         query = query.order_by(Habit.sort_order.asc(), Habit.name.asc())
+        query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         habits = result.scalars().all()
         return [HabitResponse.model_validate(habit) for habit in habits]
@@ -338,7 +341,7 @@ class HabitsService:
                 break
 
         current_streak = trailing
-        if dates[-1] < date.today() - timedelta(days=1):
+        if HabitsService._is_streak_broken(habit, dates[-1]):
             current_streak = 0
 
         if force_current_streak_reset:
@@ -358,6 +361,20 @@ class HabitsService:
             return weekday >= 5
         if habit.frequency == HabitFrequency.CUSTOM:
             return weekday in (habit.days_of_week or [])
+        return False
+
+    @staticmethod
+    def _is_streak_broken(habit: Habit, last_check_date: date) -> bool:
+        """
+        Returns True only if a day on which the habit was due was skipped
+        between last_check_date and today. Correctly handles non-daily habits.
+        """
+        today = date.today()
+        check = last_check_date + timedelta(days=1)
+        while check < today:
+            if HabitsService._is_habit_due_on(habit, check):
+                return True
+            check += timedelta(days=1)
         return False
 
     @staticmethod

@@ -48,9 +48,10 @@ async def transcribe_and_execute(
 @router.get("/history")
 async def get_voice_history(
     limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = VoiceService(db)
-    history = await service.get_history(user_id=user_id, limit=limit)
+    history = await service.get_history(user_id=user_id, limit=limit, offset=offset)
     return success([item.model_dump(mode="json") for item in history])

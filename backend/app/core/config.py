@@ -95,6 +95,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_security_secrets(self) -> Settings:
+        import logging
+
+        _log = logging.getLogger("william.config")
+
         blocked_secret_values = {
             "",
             "CHANGE-ME",
@@ -107,17 +111,30 @@ class Settings(BaseSettings):
 
         jwt_secret = self.jwt_secret_key.get_secret_value().strip()
         master_salt = self.encryption_master_salt.get_secret_value().strip()
+        jwt_weak = jwt_secret in blocked_secret_values or len(jwt_secret) < 32
+        salt_weak = master_salt in blocked_secret_values or len(master_salt) < 16
 
         if self.is_production:
-            if jwt_secret in blocked_secret_values or len(jwt_secret) < 32:
+            if jwt_weak:
                 raise ValueError(
                     "JWT_SECRET_KEY is not secure for production. "
-                    "Use a unique value with at least 32 characters."
+                    "Generate one with: openssl rand -hex 32"
                 )
-            if master_salt in blocked_secret_values or len(master_salt) < 16:
+            if salt_weak:
                 raise ValueError(
                     "ENCRYPTION_MASTER_SALT is not secure for production. "
                     "Use a unique value with at least 16 characters."
+                )
+        else:
+            if jwt_weak:
+                _log.warning(
+                    "⚠️  JWT_SECRET_KEY is using an insecure default. "
+                    "Set JWT_SECRET_KEY in your .env before connecting to any real data."
+                )
+            if salt_weak:
+                _log.warning(
+                    "⚠️  ENCRYPTION_MASTER_SALT is using an insecure default. "
+                    "Set ENCRYPTION_MASTER_SALT in your .env before storing journal entries."
                 )
 
         return self

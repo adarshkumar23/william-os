@@ -9,7 +9,17 @@ import uuid
 from datetime import date, time
 from enum import Enum
 
-from sqlalchemy import Boolean, Date, Enum as SAEnum, ForeignKey, Integer, String, Text, Time
+from sqlalchemy import (
+    Boolean,
+    Date,
+    Enum as SAEnum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,7 +67,18 @@ class Medicine(Base):
 
 class MedicineLog(Base):
     __tablename__ = "medicine_logs"
-    __table_args__ = {"schema": "medicine"}
+    __table_args__ = (
+        UniqueConstraint(
+            "medicine_id",
+            "log_date",
+            "scheduled_time",
+            name="uq_medicine_log_slot",
+        ),
+        {
+            "schema": "medicine",
+            "info": {"constraint_name": "uq_medicine_log_slot"},
+        },
+    )
 
     medicine_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("medicine.medicines.id", ondelete="CASCADE"),

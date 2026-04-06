@@ -90,6 +90,8 @@ class JournalService:
         date_from: date | None = None,
         date_to: date | None = None,
         mood_filter: JournalMood | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[JournalMetadata]:
         query = select(JournalEntry).where(JournalEntry.user_id == user_id)
 
@@ -101,6 +103,7 @@ class JournalService:
             query = query.where(JournalEntry.mood == mood_filter)
 
         query = query.order_by(JournalEntry.entry_date.desc(), JournalEntry.created_at.desc())
+        query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         entries = result.scalars().all()
         return [JournalMetadata.model_validate(entry) for entry in entries]

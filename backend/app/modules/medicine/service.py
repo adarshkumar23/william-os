@@ -63,9 +63,14 @@ class MedicineService:
 
         logger.info("medicine_deleted", user_id=str(user_id), medicine_id=str(medicine_id))
 
-    async def list_active(self, user_id: uuid.UUID) -> list[MedicineResponse]:
+    async def list_active(
+        self,
+        user_id: uuid.UUID,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MedicineResponse]:
         today = date.today()
-        result = await self.db.execute(
+        query = (
             select(Medicine)
             .where(Medicine.user_id == user_id)
             .where(Medicine.is_active.is_(True))
@@ -73,6 +78,8 @@ class MedicineService:
             .where((Medicine.end_date.is_(None)) | (Medicine.end_date >= today))
             .order_by(Medicine.name.asc())
         )
+        query = query.limit(limit).offset(offset)
+        result = await self.db.execute(query)
         medicines = result.scalars().all()
         return [MedicineResponse.model_validate(medicine) for medicine in medicines]
 

@@ -10,7 +10,13 @@ from datetime import date, datetime, time
 from enum import Enum
 
 from sqlalchemy import (
-    Boolean, Date, Enum as SAEnum, Float, ForeignKey, Integer,
+    Boolean,
+    Date,
+    Enum as SAEnum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
     String, Text, Time,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -53,7 +59,15 @@ class DailyPlan(Base):
     """One plan per user per day. Regenerated at midnight via Gemini."""
 
     __tablename__ = "daily_plans"
-    __table_args__ = {"schema": "scheduler"}
+    __table_args__ = (
+        Index(
+            "ix_daily_plans_user_date_status",
+            "user_id",
+            "plan_date",
+            "status",
+        ),
+        {"schema": "scheduler"},
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"),

@@ -36,11 +36,18 @@ async def log_sleep(
 @router.get("/history")
 async def get_sleep_history(
     days: int = Query(default=30, ge=1, le=3650),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = SleepService(db)
-    history = await service.get_sleep_history(user_id=user_id, days=days)
+    history = await service.get_sleep_history(
+        user_id=user_id,
+        days=days,
+        limit=limit,
+        offset=offset,
+    )
     return success([item.model_dump(mode="json") for item in history])
 
 
