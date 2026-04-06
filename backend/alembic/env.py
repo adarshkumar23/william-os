@@ -18,9 +18,12 @@ from app.modules.habits.models import Habit, HabitCheckIn, ProcrastinationSignal
 from app.modules.journal.models import JournalEntry  # noqa
 from app.modules.messaging.models import NotificationLog, TelegramUser  # noqa
 from app.modules.medicine.models import Medicine, MedicineLog  # noqa
+from app.modules.sleep.models import SleepDebt, SleepRecommendation, SleepRecord  # noqa
 from app.modules.scheduler.models import DailyPlan, RescheduleEvent, ScheduleBlock  # noqa
 from app.modules.study.models import MockTest, RevisionCard, StudySession, Subject  # noqa
+from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist  # noqa
 from app.modules.voice.models import VoiceCommand  # noqa
+from app.modules.decisions.models import Decision, DecisionTemplate  # noqa
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 

@@ -165,7 +165,7 @@ class FitnessService:
         user_id: uuid.UUID,
         forecast_date: date,
     ) -> EnergyForecastResponse:
-        factors = await self._build_forecast_factors(user_id)
+        factors = await self._build_forecast_factors(user_id, forecast_date)
         ai_forecast = await self._generate_ai_forecast(factors)
         if ai_forecast is None:
             ai_forecast = self._fallback_curve(factors)
@@ -204,6 +204,19 @@ class FitnessService:
         await self.db.refresh(forecast)
 
         suggestions = self._build_energy_suggestions(hourly_scores, peak_hours, low_hours)
+        try:
+            schedule_service = SchedulerService(self.db)
+            plan = await schedule_service.get_plan(user_id=user_id, plan_date=forecast_date)
+            suggestions.extend(
+                self._compute_schedule_swap_suggestions(
+                    blocks=plan.blocks,
+                    peak_hours=peak_hours,
+                    low_hours=low_hours,
+                )
+            )
+        except Exception:
+            pass
+
         return EnergyForecastResponse(
             id=forecast.id,
             forecast_date=forecast.forecast_date,
@@ -262,23 +275,20 @@ class FitnessService:
         except Exception:
             return ["No schedule found for this date. Generate a daily plan first."]
 
-        peak_hours = set(forecast.peak_hours)
-        suggestions: list[str] = []
-
-        for block in plan.blocks:
-            hour = f"{block.start_time.hour:02d}"
-            if block.priority <= 3 and hour not in peak_hours and peak_hours:
-                target_hour = sorted(peak_hours)[0]
-                suggestions.append(
-                    f"Move '{block.title}' closer to {target_hour}:00 for better performance."
-                )
+        suggestions = self._compute_schedule_swap_suggestions(
+            blocks=plan.blocks,
+            peak_hours=forecast.peak_hours,
+            low_hours=forecast.low_hours,
+        )
 
         if not suggestions:
             suggestions.append("Current schedule aligns well with your energy forecast.")
 
         return suggestions
 
-    async def _build_forecast_factors(self, user_id: uuid.UUID) -> dict:
+    async def _build_forecast_factors(self, user_id: uuid.UUID, forecast_date: date) -> dict:
+        from app.modules.sleep.service import SleepService
+
         today = date.today()
         week_ago = datetime.now(UTC) - timedelta(days=7)
 
@@ -297,10 +307,47 @@ class FitnessService:
         )
         activity_minutes = int(workout_result.scalar() or 0)
 
+        # Pull last-night sleep intelligence from SleepService.
+        sleep_service = SleepService(self.db)
+        sleep_records = await sleep_service.get_sleep_history(user_id=user_id, days=2)
+        latest_sleep = next(
+            (item for item in sleep_records if item.sleep_date <= forecast_date),
+            None,
+        )
+        sleep_last_night_hours = round(
+            (latest_sleep.sleep_duration_minutes / 60.0) if latest_sleep else sleep_avg,
+            2,
+        )
+        sleep_quality_last_night = round(
+            float(latest_sleep.sleep_quality) if latest_sleep else min(10.0, max(1.0, sleep_avg)),
+            2,
+        )
+
+        # Pull schedule density from SchedulerService.
+        schedule_density = 0
+        high_priority_blocks = 0
+        try:
+            schedule_service = SchedulerService(self.db)
+            plan = await schedule_service.get_plan(user_id=user_id, plan_date=forecast_date)
+            schedule_density = len(plan.blocks)
+            high_priority_blocks = len([block for block in plan.blocks if block.priority <= 3])
+        except Exception:
+            schedule_density = 0
+            high_priority_blocks = 0
+
+        recent_workouts = await self.list_workouts(user_id=user_id, days=7)
+        workout_count_7d = len(recent_workouts)
+
         return {
             "sleep_quality": round(min(10.0, max(1.0, sleep_avg)), 2),
             "sleep_duration": round(sleep_avg, 2),
+            "sleep_last_night_hours": sleep_last_night_hours,
+            "sleep_quality_last_night": sleep_quality_last_night,
             "activity_level": activity_minutes,
+            "workout_minutes_7d": activity_minutes,
+            "workout_count_7d": workout_count_7d,
+            "schedule_density": schedule_density,
+            "high_priority_blocks": high_priority_blocks,
         }
 
     async def _generate_ai_forecast(self, factors: dict) -> dict | None:
@@ -309,7 +356,7 @@ class FitnessService:
             return None
 
         prompt = (
-            "Given sleep quality and activity, predict hourly energy levels 1-10 as JSON. "
+            "Given sleep, workouts, and schedule load, predict hourly energy levels 1-10 as JSON. "
             "Return keys: hourly_scores, peak_hours, low_hours. "
             f"Input factors: {json.dumps(factors)}"
         )
@@ -350,8 +397,13 @@ class FitnessService:
 
     @staticmethod
     def _fallback_curve(factors: dict) -> dict:
-        sleep = float(factors.get("sleep_duration") or 7.0)
+        sleep = float(factors.get("sleep_last_night_hours") or factors.get("sleep_duration") or 7.0)
+        schedule_density = int(factors.get("schedule_density") or 0)
         base = min(8.5, max(4.0, 5.5 + (sleep - 6.0) * 0.7))
+        if schedule_density >= 10:
+            base -= 0.2
+        if sleep < 6.0:
+            base -= 0.5
 
         hourly_scores = {
             "06": round(base - 0.3, 1),
@@ -384,6 +436,42 @@ class FitnessService:
             "low_hours": low_hours,
             "generated_by": "rule_based",
         }
+
+    @staticmethod
+    def _compute_schedule_swap_suggestions(
+        blocks,
+        peak_hours: list[str],
+        low_hours: list[str],
+    ) -> list[str]:
+        if not blocks:
+            return []
+
+        peak_set = set(peak_hours)
+        low_set = set(low_hours)
+        high_priority_misaligned = []
+        low_priority_peak = []
+
+        for block in blocks:
+            hour = f"{block.start_time.hour:02d}"
+            if block.priority <= 3 and hour in low_set:
+                high_priority_misaligned.append(block)
+            if block.priority >= 6 and hour in peak_set:
+                low_priority_peak.append(block)
+
+        suggestions: list[str] = []
+        for hp, lp in zip(high_priority_misaligned[:3], low_priority_peak[:3]):
+            suggestions.append(
+                f"Swap '{hp.title}' ({hp.start_time}) with '{lp.title}' ({lp.start_time}) to align priority with energy peaks."
+            )
+
+        if not suggestions and high_priority_misaligned and peak_hours:
+            target = sorted(peak_hours)[0]
+            for block in high_priority_misaligned[:3]:
+                suggestions.append(
+                    f"Move high-priority block '{block.title}' closer to {target}:00."
+                )
+
+        return suggestions
 
     @staticmethod
     def _extract_json(text: str) -> dict | None:

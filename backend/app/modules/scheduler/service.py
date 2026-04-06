@@ -148,6 +148,20 @@ class SchedulerService:
 
         await self.db.flush()
 
+        # Post-generation optimization: align priority blocks with energy peaks.
+        try:
+            await self.optimize_schedule_by_energy(
+                user_id=user_id,
+                plan_date=request.target_date,
+            )
+        except Exception as exc:
+            logger.warning(
+                "schedule_auto_energy_optimization_failed",
+                user_id=str(user_id),
+                date=str(request.target_date),
+                error=str(exc),
+            )
+
         logger.info(
             "schedule_generated",
             user_id=str(user_id),
@@ -296,6 +310,105 @@ class SchedulerService:
             user_id=user_id,
         ))
 
+        return await self.get_plan(user_id, plan_date)
+
+    async def optimize_schedule_by_energy(
+        self,
+        user_id: uuid.UUID,
+        plan_date: date,
+    ) -> DailyPlanResponse:
+        """Swap non-fixed blocks to align high-priority work with energy peaks."""
+        from app.modules.fitness.service import FitnessService
+
+        plan = await self._get_plan(user_id, plan_date)
+        if not plan:
+            raise NotFoundError("DailyPlan", str(plan_date))
+
+        fitness = FitnessService(self.db)
+        forecast = await fitness.get_energy_forecast(user_id=user_id, forecast_date=plan_date)
+        if forecast is None:
+            forecast = await fitness.generate_energy_forecast(
+                user_id=user_id,
+                forecast_date=plan_date,
+            )
+
+        peak_set = set(forecast.peak_hours)
+        low_set = set(forecast.low_hours)
+
+        movable = [
+            block
+            for block in plan.blocks
+            if not block.is_fixed and block.status == BlockStatus.PENDING
+        ]
+        high_priority_low_energy = [
+            block
+            for block in movable
+            if block.priority <= 3 and f"{block.start_time.hour:02d}" in low_set
+        ]
+        low_priority_peak_energy = [
+            block
+            for block in movable
+            if block.priority >= 6 and f"{block.start_time.hour:02d}" in peak_set
+        ]
+
+        swaps = []
+        used_low_blocks: set[uuid.UUID] = set()
+        for high_block in high_priority_low_energy:
+            candidate = next(
+                (
+                    low_block
+                    for low_block in low_priority_peak_energy
+                    if low_block.id not in used_low_blocks
+                    and low_block.duration_minutes == high_block.duration_minutes
+                ),
+                None,
+            )
+            if candidate is None:
+                continue
+
+            high_start, high_end = high_block.start_time, high_block.end_time
+            low_start, low_end = candidate.start_time, candidate.end_time
+
+            high_block.start_time, high_block.end_time = low_start, low_end
+            candidate.start_time, candidate.end_time = high_start, high_end
+            used_low_blocks.add(candidate.id)
+
+            swaps.append(
+                {
+                    "high_priority": high_block.title,
+                    "low_priority": candidate.title,
+                    "from": str(high_start),
+                    "to": str(low_start),
+                }
+            )
+
+        if swaps:
+            self.db.add(
+                RescheduleEvent(
+                    plan_id=plan.id,
+                    trigger="auto_energy",
+                    reason="Automatic optimization using energy forecast",
+                    old_schedule={
+                        "peaks": forecast.peak_hours,
+                        "lows": forecast.low_hours,
+                    },
+                    new_schedule={"swaps": swaps},
+                    ai_model_used=forecast.generated_by,
+                )
+            )
+            await event_bus.publish(
+                Event(
+                    type=EventType.SCHEDULE_RESCHEDULED,
+                    data={
+                        "date": str(plan_date),
+                        "reason": "auto_energy",
+                        "swap_count": len(swaps),
+                    },
+                    user_id=user_id,
+                )
+            )
+
+        await self.db.flush()
         return await self.get_plan(user_id, plan_date)
 
     # ── Private Helpers ──────────────────────────────────────────

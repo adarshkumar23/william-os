@@ -103,3 +103,14 @@ async def reschedule(
     service = SchedulerService(db)
     plan = await service.reschedule(user_id, plan_date, request)
     return success(plan.model_dump(mode="json"))
+
+
+@router.post("/{plan_date}/optimize")
+async def optimize_by_energy(
+    plan_date: date,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = SchedulerService(db)
+    plan = await service.optimize_schedule_by_energy(user_id=user_id, plan_date=plan_date)
+    return success(plan.model_dump(mode="json"))

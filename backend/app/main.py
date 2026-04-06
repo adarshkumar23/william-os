@@ -139,6 +139,7 @@ def create_app() -> FastAPI:
 def register_routes(app: FastAPI) -> None:
     """Register all module routers under /api/v1."""
     from app.modules.auth.routes import router as auth_router
+    from app.modules.decisions.routes import router as decisions_router
     from app.modules.email_intel.routes import router as email_router
     from app.modules.fitness.routes import router as fitness_router
     from app.modules.habits.routes import router as habits_router
@@ -146,7 +147,9 @@ def register_routes(app: FastAPI) -> None:
     from app.modules.medicine.routes import router as medicine_router
     from app.modules.messaging.routes import router as messaging_router
     from app.modules.scheduler.routes import router as scheduler_router
+    from app.modules.sleep.routes import router as sleep_router
     from app.modules.study.routes import router as study_router
+    from app.modules.trading.routes import router as trading_router
     from app.modules.voice.routes import router as voice_router
 
     prefix = "/api/v1"
@@ -160,6 +163,9 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(messaging_router, prefix=prefix)
     app.include_router(voice_router, prefix=prefix)
     app.include_router(study_router, prefix=prefix)
+    app.include_router(trading_router, prefix=prefix)
+    app.include_router(sleep_router, prefix=prefix)
+    app.include_router(decisions_router, prefix=prefix)
     # Future modules added here:
     # app.include_router(audit_router, prefix=prefix)
 

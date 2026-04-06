@@ -62,6 +62,26 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/5"),  # every 5 min
         "options": {"queue": "notifications"},
     },
+    "trading-price-alert-check": {
+        "task": "app.worker.check_trading_price_alerts",
+        "schedule": crontab(minute="*/15"),  # every 15 min
+        "options": {"queue": "analysis"},
+    },
+    "daily-portfolio-snapshot": {
+        "task": "app.worker.create_daily_portfolio_snapshots",
+        "schedule": crontab(hour=18, minute=0),  # 6 PM UTC
+        "options": {"queue": "analysis"},
+    },
+    "daily-sleep-recommendation": {
+        "task": "app.worker.generate_daily_sleep_recommendations",
+        "schedule": crontab(hour=20, minute=0),  # 8 PM UTC
+        "options": {"queue": "analysis"},
+    },
+    "weekly-decision-review": {
+        "task": "app.worker.send_weekly_decision_review",
+        "schedule": crontab(day_of_week="sun", hour=10, minute=0),
+        "options": {"queue": "analysis"},
+    },
     "cleanup-expired-tokens": {
         "task": "app.worker.cleanup_expired_tokens",
         "schedule": crontab(hour=3, minute=0),  # 3 AM UTC
@@ -336,6 +356,263 @@ def check_medicine_reminders():
                 except Exception as e:
                     logger.error(
                         "medicine_reminder_check_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.check_trading_price_alerts")
+def check_trading_price_alerts():
+    """Check triggered trading alerts and notify users via Telegram."""
+    import structlog
+
+    logger = structlog.get_logger("worker.trading_alerts")
+    logger.info("trading_alert_check_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.messaging.schemas import NotificationPayload
+        from app.modules.messaging.service import MessagingService
+        from app.modules.trading.models import PriceAlert, Watchlist
+        from app.modules.trading.service import TradingService
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            trading = TradingService(db)
+            messaging = MessagingService(db)
+            for user in users:
+                try:
+                    alerts = await trading.check_price_alerts(user_id=user.id)
+                    if not alerts:
+                        continue
+
+                    for alert in alerts:
+                        watch_item = await db.get(Watchlist, alert.watchlist_id)
+                        symbol = watch_item.symbol if watch_item else "Unknown"
+                        payload = NotificationPayload(
+                            title="Trading price alert",
+                            body=(
+                                f"{symbol}: price moved {alert.alert_type} "
+                                f"{alert.target_price:.2f}."
+                            ),
+                            notification_type="trading_price_alert",
+                            data=alert.model_dump(mode="json"),
+                        )
+                        await messaging.send_notification(user_id=user.id, payload=payload)
+
+                        db_alert = await db.get(PriceAlert, alert.id)
+                        if db_alert:
+                            db_alert.notification_sent = True
+
+                    logger.info(
+                        "trading_alerts_processed",
+                        user_id=str(user.id),
+                        count=len(alerts),
+                    )
+                except Exception as e:
+                    logger.error(
+                        "trading_alert_check_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.create_daily_portfolio_snapshots")
+def create_daily_portfolio_snapshots():
+    """Generate daily portfolio snapshots and notify users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.trading_snapshot")
+    logger.info("portfolio_snapshot_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.messaging.schemas import NotificationPayload
+        from app.modules.messaging.service import MessagingService
+        from app.modules.trading.service import TradingService
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            trading = TradingService(db)
+            messaging = MessagingService(db)
+            for user in users:
+                try:
+                    summary = await trading.calculate_portfolio(user_id=user.id)
+                    payload = NotificationPayload(
+                        title="Daily portfolio snapshot",
+                        body=(
+                            f"Value: {summary.current_value:.2f} | "
+                            f"PnL: {summary.total_pnl:+.2f} "
+                            f"({summary.total_pnl_pct:+.2f}%)"
+                        ),
+                        notification_type="portfolio_snapshot",
+                        data=summary.model_dump(mode="json"),
+                    )
+                    await messaging.send_notification(user_id=user.id, payload=payload)
+                    logger.info(
+                        "portfolio_snapshot_generated",
+                        user_id=str(user.id),
+                        current_value=summary.current_value,
+                        total_pnl=summary.total_pnl,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "portfolio_snapshot_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.generate_daily_sleep_recommendations")
+def generate_daily_sleep_recommendations():
+    """Generate sleep recommendations for tonight and notify users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.sleep_recommendation")
+    logger.info("sleep_recommendation_generation_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.messaging.schemas import NotificationPayload
+        from app.modules.messaging.service import MessagingService
+        from app.modules.sleep.service import SleepService
+
+        target_date = date.today()
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            sleep = SleepService(db)
+            messaging = MessagingService(db)
+            for user in users:
+                try:
+                    recommendation = await sleep.generate_recommendation(
+                        user_id=user.id,
+                        for_date=target_date,
+                    )
+                    payload = NotificationPayload(
+                        title="Sleep recommendation for tonight",
+                        body=(
+                            f"Bedtime: {recommendation.recommended_bedtime} | "
+                            f"Wake: {recommendation.recommended_wake_time}"
+                        ),
+                        notification_type="sleep_recommendation",
+                        data=recommendation.model_dump(mode="json"),
+                    )
+                    await messaging.send_notification(user_id=user.id, payload=payload)
+                    logger.info(
+                        "sleep_recommendation_generated",
+                        user_id=str(user.id),
+                        target_date=str(target_date),
+                    )
+                except Exception as e:
+                    logger.error(
+                        "sleep_recommendation_generation_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.send_weekly_decision_review")
+def send_weekly_decision_review():
+    """Send a weekly decision quality review summary to users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.weekly_decisions")
+    logger.info("weekly_decision_review_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.decisions.service import DecisionService
+        from app.modules.messaging.schemas import NotificationPayload
+        from app.modules.messaging.service import MessagingService
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            decisions = DecisionService(db)
+            messaging = MessagingService(db)
+            for user in users:
+                try:
+                    decision_list = await decisions.list_decisions(user_id=user.id)
+                    stats = await decisions.get_decision_quality(user_id=user.id)
+
+                    reviewed_count = len(
+                        [item for item in decision_list if item.status == "reviewed"]
+                    )
+                    pending_review_count = len(
+                        [
+                            item
+                            for item in decision_list
+                            if item.status in {"decided", "analyzing", "open"}
+                        ]
+                    )
+
+                    payload = NotificationPayload(
+                        title="Weekly decision review",
+                        body=(
+                            f"Total: {stats.total} | Reviewed: {reviewed_count} | "
+                            f"Pending: {pending_review_count}"
+                        ),
+                        notification_type="weekly_decision_review",
+                        data={
+                            "stats": stats.model_dump(mode="json"),
+                            "reviewed_count": reviewed_count,
+                            "pending_review_count": pending_review_count,
+                        },
+                    )
+                    await messaging.send_notification(user_id=user.id, payload=payload)
+                    logger.info(
+                        "weekly_decision_review_sent",
+                        user_id=str(user.id),
+                        total=stats.total,
+                        pending_review_count=pending_review_count,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "weekly_decision_review_failed",
                         user_id=str(user.id),
                         error=str(e),
                     )
