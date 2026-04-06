@@ -62,6 +62,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/30"),  # every 30 min
         "options": {"queue": "analysis"},
     },
+    "daily-life-score-computation": {
+        "task": "app.worker.compute_daily_life_scores",
+        "schedule": crontab(hour=6, minute=0),  # 6 AM UTC
+        "options": {"queue": "analysis"},
+    },
     "medicine-reminder-check": {
         "task": "app.worker.check_medicine_reminders",
         "schedule": crontab(minute="*/5"),  # every 5 min
@@ -353,6 +358,48 @@ def run_cross_module_intelligence():
                 except Exception as e:
                     logger.error(
                         "cross_module_intelligence_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.compute_daily_life_scores")
+def compute_daily_life_scores():
+    """Compute daily life score for all active users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.life_score")
+    logger.info("daily_life_score_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.intelligence.service import LifeScoreService
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            service = LifeScoreService(db)
+            for user in users:
+                try:
+                    score = await service.compute_score(user_id=user.id)
+                    logger.info(
+                        "daily_life_score_computed",
+                        user_id=str(user.id),
+                        score=score.score,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "daily_life_score_failed",
                         user_id=str(user.id),
                         error=str(e),
                     )

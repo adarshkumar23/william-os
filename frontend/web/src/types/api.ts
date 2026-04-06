@@ -168,6 +168,21 @@ export type EnergyForecast = {
   [key: string]: unknown;
 };
 
+export type LifeScore = {
+  id: string;
+  user_id: string;
+  score: number;
+  component_scores: Record<string, number>;
+  explanation: string;
+  computed_at: string;
+  created_at: string;
+};
+
+export type LifeScoreHistoryPoint = {
+  score: number;
+  computed_at: string;
+};
+
 export type Trade = {
   id: string;
   symbol: string;

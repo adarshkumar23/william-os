@@ -5,21 +5,27 @@ Cross-module signal collection and adjustment evaluation.
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from math import isfinite
 from typing import TYPE_CHECKING, Any
 
+import httpx
+import structlog
+from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.decisions.service import DecisionService
 from app.modules.fitness.service import FitnessService
 from app.modules.habits.service import HabitsService
-from app.modules.intelligence.models import CrossModuleRule, ModuleSignal
+from app.modules.intelligence.models import CrossModuleRule, LifeScore, ModuleSignal
 from app.modules.intelligence.schemas import (
     AdjustmentItem,
     AdjustmentsResponse,
     CrossModuleRuleCreate,
     CrossModuleRuleResponse,
+    LifeScoreHistoryPoint,
+    LifeScoreResponse,
     ModuleSignalResponse,
 )
 from app.modules.journal.service import JournalService
@@ -30,8 +36,11 @@ from app.modules.trading.service import TradingService
 from sqlalchemy import select
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
     import uuid
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+
+logger = structlog.get_logger(__name__)
 
 
 MOOD_SCORE = {
@@ -40,6 +49,16 @@ MOOD_SCORE = {
     "okay": 55.0,
     "low": 35.0,
     "bad": 20.0,
+}
+
+LIFE_SCORE_WEIGHTS = {
+    "sleep": 0.20,
+    "habits": 0.20,
+    "fitness": 0.15,
+    "study": 0.15,
+    "medicine": 0.10,
+    "journal": 0.10,
+    "decisions": 0.10,
 }
 
 
@@ -381,3 +400,204 @@ class IntelligenceService:
         if operator == "eq":
             return current_value == threshold
         return current_value > threshold
+
+
+class LifeScoreService:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self.settings = get_settings()
+
+    async def compute_score(self, user_id: uuid.UUID) -> LifeScoreResponse:
+        intelligence_service = IntelligenceService(self.db)
+        await intelligence_service.collect_signals(user_id=user_id)
+        latest = await intelligence_service._latest_signal_lookup(user_id)
+
+        component_scores = self._compute_component_scores(latest)
+        score = round(
+            sum(component_scores[key] * LIFE_SCORE_WEIGHTS[key] for key in LIFE_SCORE_WEIGHTS),
+            2,
+        )
+
+        explanation = await self.generate_explanation(score=score, components=component_scores)
+
+        life_score = LifeScore(
+            user_id=user_id,
+            score=score,
+            component_scores=component_scores,
+            explanation=explanation,
+            computed_at=datetime.now(UTC),
+        )
+        self.db.add(life_score)
+        await self.db.flush()
+        await self.db.refresh(life_score)
+
+        await event_bus.publish(
+            Event(
+                type=EventType.INTELLIGENCE_LIFE_SCORE_COMPUTED,
+                data={"score": score, "components": component_scores},
+                user_id=user_id,
+            )
+        )
+
+        return LifeScoreResponse.model_validate(life_score)
+
+    async def get_latest_score(self, user_id: uuid.UUID) -> LifeScoreResponse:
+        result = await self.db.execute(
+            select(LifeScore)
+            .where(LifeScore.user_id == user_id)
+            .order_by(LifeScore.computed_at.desc(), LifeScore.created_at.desc())
+            .limit(1)
+        )
+        latest = result.scalar_one_or_none()
+
+        if latest:
+            age = datetime.now(UTC) - latest.computed_at
+            if age <= timedelta(minutes=180):
+                return LifeScoreResponse.model_validate(latest)
+
+        return await self.compute_score(user_id=user_id)
+
+    async def get_score_history(
+        self,
+        user_id: uuid.UUID,
+        days: int = 30,
+    ) -> list[LifeScoreHistoryPoint]:
+        cutoff = datetime.now(UTC) - timedelta(days=max(1, days))
+        result = await self.db.execute(
+            select(LifeScore)
+            .where(LifeScore.user_id == user_id)
+            .where(LifeScore.computed_at >= cutoff)
+            .order_by(LifeScore.computed_at.asc(), LifeScore.created_at.asc())
+        )
+        rows = result.scalars().all()
+
+        return [
+            LifeScoreHistoryPoint(score=float(row.score), computed_at=row.computed_at)
+            for row in rows
+        ]
+
+    async def generate_explanation(self, score: float, components: dict[str, float]) -> str:
+        api_key = self.settings.gemini_api_key.get_secret_value()
+        if not api_key:
+            return self._fallback_explanation(score=score, components=components)
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": (
+                                "You are a personal wellbeing coach. "
+                                "Write exactly 2 concise sentences explaining a life score.\n"
+                                f"Score: {score}\n"
+                                f"Components: {json.dumps(components)}\n"
+                                "Mention top weakness and one recovery-positive signal."
+                            )
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.4,
+                "maxOutputTokens": 180,
+            },
+        }
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.settings.gemini_model}:generateContent"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    url,
+                    headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                    json=payload,
+                )
+                response.raise_for_status()
+                raw = response.json()
+
+            text = raw["candidates"][0]["content"]["parts"][0]["text"]
+            return self._normalize_explanation(text=text, score=score, components=components)
+        except Exception as exc:
+            logger.warning("life_score_explanation_failed", error=str(exc))
+            return self._fallback_explanation(score=score, components=components)
+
+    @staticmethod
+    def _compute_component_scores(latest: dict[tuple[str, str], float]) -> dict[str, float]:
+        sleep_energy = float(latest.get(("sleep", "energy"), 50.0))
+        sleep_debt = float(latest.get(("sleep", "risk"), 0.0))
+        sleep_score = LifeScoreService._clamp_score(sleep_energy - min(40.0, sleep_debt * 10.0))
+
+        habits_focus = float(latest.get(("habits", "focus"), 50.0))
+        habits_risk = float(latest.get(("habits", "risk"), 0.0))
+        habits_score = LifeScoreService._clamp_score(habits_focus - (habits_risk * 0.3))
+
+        fitness_score = LifeScoreService._clamp_score(
+            float(latest.get(("fitness", "energy"), 50.0))
+        )
+        study_score = LifeScoreService._clamp_score(float(latest.get(("study", "focus"), 50.0)))
+
+        medicine_adherence = float(latest.get(("medicine", "energy"), 50.0))
+        medicine_risk = float(latest.get(("medicine", "risk"), 0.0))
+        medicine_score = LifeScoreService._clamp_score(medicine_adherence - (medicine_risk * 0.2))
+
+        journal_score = LifeScoreService._clamp_score(float(latest.get(("journal", "mood"), 55.0)))
+        decisions_score = LifeScoreService._clamp_score(
+            float(latest.get(("decisions", "focus"), 50.0))
+        )
+
+        return {
+            "sleep": round(sleep_score, 2),
+            "habits": round(habits_score, 2),
+            "fitness": round(fitness_score, 2),
+            "study": round(study_score, 2),
+            "medicine": round(medicine_score, 2),
+            "journal": round(journal_score, 2),
+            "decisions": round(decisions_score, 2),
+        }
+
+    @staticmethod
+    def _clamp_score(value: float) -> float:
+        return max(0.0, min(100.0, value))
+
+    def _normalize_explanation(self, text: str, score: float, components: dict[str, float]) -> str:
+        cleaned = " ".join(text.strip().split())
+        if not cleaned:
+            return self._fallback_explanation(score=score, components=components)
+
+        sentences: list[str] = []
+        current = ""
+        for char in cleaned:
+            current += char
+            if char in ".!?":
+                candidate = current.strip()
+                if candidate:
+                    sentences.append(candidate)
+                current = ""
+
+        if current.strip():
+            sentences.append(current.strip() + ".")
+
+        if not sentences:
+            return self._fallback_explanation(score=score, components=components)
+        if len(sentences) == 1:
+            sentences.append("Keep improving your lowest component to raise tomorrow's score.")
+
+        return " ".join(sentences[:2])
+
+    def _fallback_explanation(self, score: float, components: dict[str, float]) -> str:
+        ranked = sorted(components.items(), key=lambda item: item[1])
+        low_name, low_score = ranked[0]
+        high_name, high_score = ranked[-1]
+        return (
+            (
+                f"Your Life Score is {score:.1f}, "
+                f"with the biggest drag from {low_name} ({low_score:.0f}). "
+            )
+            + (
+                f"Your strongest area is {high_name} ({high_score:.0f}), "
+                "so keep that consistency while fixing the weakest area."
+            )
+        )

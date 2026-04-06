@@ -48,6 +48,7 @@ class EventType(str, Enum):
     # Intelligence
     INTELLIGENCE_SIGNALS_COLLECTED = "intelligence.signals_collected"
     INTELLIGENCE_RULES_APPLIED = "intelligence.rules_applied"
+    INTELLIGENCE_LIFE_SCORE_COMPUTED = "intelligence.life_score_computed"
 
     # System
     DAILY_CYCLE_MIDNIGHT = "system.midnight_cycle"

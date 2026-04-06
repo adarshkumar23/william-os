@@ -59,3 +59,20 @@ class AdjustmentsResponse(BaseModel):
     generated_at: datetime
     count: int
     adjustments: dict[str, list[AdjustmentItem]]
+
+
+class LifeScoreResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    score: float
+    component_scores: dict[str, float]
+    explanation: str
+    computed_at: datetime
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LifeScoreHistoryPoint(BaseModel):
+    score: float
+    computed_at: datetime

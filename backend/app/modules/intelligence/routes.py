@@ -10,7 +10,7 @@ import uuid
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.intelligence.schemas import CrossModuleRuleCreate
-from app.modules.intelligence.service import IntelligenceService
+from app.modules.intelligence.service import IntelligenceService, LifeScoreService
 from app.shared.types import success
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,3 +59,24 @@ async def create_rule(
     service = IntelligenceService(db)
     rule = await service.create_rule(payload)
     return success(rule.model_dump(mode="json"))
+
+
+@router.get("/life-score")
+async def get_life_score(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = LifeScoreService(db)
+    score = await service.get_latest_score(user_id=user_id)
+    return success(score.model_dump(mode="json"))
+
+
+@router.get("/life-score/history")
+async def get_life_score_history(
+    days: int = Query(default=30, ge=1, le=365),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = LifeScoreService(db)
+    history = await service.get_score_history(user_id=user_id, days=days)
+    return success([item.model_dump(mode="json") for item in history])

@@ -10,6 +10,8 @@ import {
   EnergyForecast,
   Habit,
   HabitCheckIn,
+  LifeScore,
+  LifeScoreHistoryPoint,
   JournalEntryDecrypted,
   JournalEntryMeta,
   Medicine,
@@ -353,6 +355,11 @@ export const api = {
     sync: () => post<Record<string, unknown>>("/email/sync"),
     summary: () => get<Record<string, unknown> | null>("/email/summary"),
     briefing: () => get<Record<string, unknown>>("/email/briefing"),
+  },
+
+  intelligence: {
+    lifeScore: () => get<LifeScore>("/intelligence/life-score"),
+    lifeScoreHistory: (days = 30) => get<LifeScoreHistoryPoint[]>("/intelligence/life-score/history", { days }),
   },
 
   export: {

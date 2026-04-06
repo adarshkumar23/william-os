@@ -12,11 +12,12 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import Modal from "../components/Modal";
+import LifeScoreCard from "../components/LifeScoreCard";
 import StatCard from "../components/StatCard";
 import TimelineBlock from "../components/TimelineBlock";
 import { useCountdown } from "../hooks/useCountdown";
 import { api } from "../services/api";
-import { DailyPlan, Habit, MedicineReminder } from "../types/api";
+import { DailyPlan, Habit, LifeScore, LifeScoreHistoryPoint, MedicineReminder } from "../types/api";
 
 function toReminderDate(reminder?: MedicineReminder) {
   if (!reminder) {
@@ -37,6 +38,8 @@ export default function DashboardPage() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [reminders, setReminders] = useState<MedicineReminder[]>([]);
   const [energyForecast, setEnergyForecast] = useState<Record<string, unknown> | null>(null);
+  const [lifeScore, setLifeScore] = useState<LifeScore | null>(null);
+  const [lifeScoreHistory, setLifeScoreHistory] = useState<LifeScoreHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -46,16 +49,20 @@ export default function DashboardPage() {
     setLoading(true);
     setError("");
     try {
-      const [todayPlan, habitList, upcoming, energy] = await Promise.all([
+      const [todayPlan, habitList, upcoming, energy, score, scoreHistory] = await Promise.all([
         api.scheduler.today().catch(() => null),
         api.habits.list({ active_only: true, limit: 100, offset: 0 }),
         api.medicine.upcoming(180).catch(() => []),
         api.fitness.energyByDate(format(new Date(), "yyyy-MM-dd")).catch(() => null),
+        api.intelligence.lifeScore().catch(() => null),
+        api.intelligence.lifeScoreHistory(30).catch(() => []),
       ]);
       setPlan(todayPlan);
       setHabits(habitList);
       setReminders(upcoming);
       setEnergyForecast(energy);
+      setLifeScore(score);
+      setLifeScoreHistory(scoreHistory);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard");
     } finally {
@@ -156,6 +163,8 @@ export default function DashboardPage() {
       </section>
 
       <aside className="space-y-4 xl:col-span-2">
+        <LifeScoreCard lifeScore={lifeScore} history={lifeScoreHistory} loading={loading} />
+
         <div className="grid grid-cols-2 gap-3">
           <StatCard
             icon={CheckCircle2}

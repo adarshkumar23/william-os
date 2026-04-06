@@ -110,3 +110,44 @@ class TestIntelligenceEndpoints:
         assert body["data"]["affected_module"] == "study"
         assert body["data"]["adjustment_type"] == "multiply"
         assert body["data"]["is_active"] is True
+
+    @pytest.mark.asyncio
+    async def test_get_life_score_returns_envelope(self, client: AsyncClient):
+        headers = await _auth_headers(
+            client,
+            email="intel-life-score@william.os",
+            username="intellifescore",
+        )
+
+        resp = await client.get("/api/v1/intelligence/life-score", headers=headers)
+        assert resp.status_code == 200
+
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["error"] is None
+        assert isinstance(body["data"]["score"], (int, float))
+        assert isinstance(body["data"]["component_scores"], dict)
+        assert isinstance(body["data"]["explanation"], str)
+        assert body["data"]["explanation"]
+
+    @pytest.mark.asyncio
+    async def test_get_life_score_history_returns_list(self, client: AsyncClient):
+        headers = await _auth_headers(
+            client,
+            email="intel-life-history@william.os",
+            username="intellifehistory",
+        )
+
+        compute_resp = await client.get("/api/v1/intelligence/life-score", headers=headers)
+        assert compute_resp.status_code == 200
+
+        resp = await client.get("/api/v1/intelligence/life-score/history?days=30", headers=headers)
+        assert resp.status_code == 200
+
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["error"] is None
+        assert isinstance(body["data"], list)
+        assert len(body["data"]) >= 1
+        assert "score" in body["data"][0]
+        assert "computed_at" in body["data"][0]
