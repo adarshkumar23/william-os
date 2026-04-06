@@ -25,7 +25,7 @@ from app.modules.trading.schemas import (
     WatchlistResponse,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

@@ -1,46 +1,261 @@
-import { useCallback, useEffect, useState } from "react";
+import { format } from "date-fns";
+import {
+  AlarmClock,
+  CalendarClock,
+  CheckCircle2,
+  Flame,
+  HeartPulse,
+  Sparkles,
+  Stethoscope,
+  WandSparkles,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import ScheduleTimeline from "../components/ScheduleTimeline";
-import { useRealtimeSync } from "../hooks/useRealtimeSync";
+import Modal from "../components/Modal";
+import StatCard from "../components/StatCard";
+import TimelineBlock from "../components/TimelineBlock";
+import { useCountdown } from "../hooks/useCountdown";
 import { api } from "../services/api";
+import { DailyPlan, Habit, MedicineReminder } from "../types/api";
+
+function toReminderDate(reminder?: MedicineReminder) {
+  if (!reminder) {
+    return null;
+  }
+  const today = new Date();
+  const [h, m] = reminder.scheduled_time.slice(0, 5).split(":").map(Number);
+  const dt = new Date(today);
+  dt.setHours(h, m, 0, 0);
+  if (dt.getTime() < today.getTime()) {
+    dt.setDate(dt.getDate() + 1);
+  }
+  return dt;
+}
 
 export default function DashboardPage() {
-  const [schedule, setSchedule] = useState<any | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<DailyPlan | null>(null);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [reminders, setReminders] = useState<MedicineReminder[]>([]);
+  const [energyForecast, setEnergyForecast] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleReason, setRescheduleReason] = useState("Need to optimize for deep work and calls");
 
-  const load = useCallback(async () => {
+  const load = async () => {
+    setLoading(true);
+    setError("");
     try {
-      const plan = await api.schedule.today();
-      setSchedule(plan);
-    } catch (err: any) {
-      setError(err?.response?.data?.error || "Unable to load today's schedule");
+      const [todayPlan, habitList, upcoming, energy] = await Promise.all([
+        api.scheduler.today().catch(() => null),
+        api.habits.list({ active_only: true, limit: 100, offset: 0 }),
+        api.medicine.upcoming(180).catch(() => []),
+        api.fitness.energyByDate(format(new Date(), "yyyy-MM-dd")).catch(() => null),
+      ]);
+      setPlan(todayPlan);
+      setHabits(habitList);
+      setReminders(upcoming);
+      setEnergyForecast(energy);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load dashboard");
+    } finally {
+      setLoading(false);
     }
-  }, []);
-
-  useRealtimeSync({
-    onScheduleUpdated: () => {
-      void load();
-    },
-  });
+  };
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, []);
+
+  const completedBlocks = useMemo(
+    () => plan?.blocks.filter((block) => block.status === "completed").length ?? 0,
+    [plan],
+  );
+
+  const checkedHabits = useMemo(
+    () => habits.filter((habit) => (habit.current_streak ?? 0) > 0).length,
+    [habits],
+  );
+
+  const maxStreak = useMemo(
+    () => habits.reduce((max, habit) => Math.max(max, habit.current_streak ?? 0), 0),
+    [habits],
+  );
+
+  const nextReminder = reminders[0];
+  const countdown = useCountdown(toReminderDate(nextReminder));
+
+  const onGenerateSchedule = async () => {
+    await api.scheduler.generate(format(new Date(), "yyyy-MM-dd"), {});
+    await load();
+  };
+
+  const onStartBlock = async (blockId: string) => {
+    await api.scheduler.startBlock(blockId);
+    await load();
+  };
+
+  const onCompleteBlock = async (blockId: string) => {
+    await api.scheduler.updateBlock(blockId, { status: "completed" });
+    await load();
+  };
+
+  const onReschedule = async () => {
+    await api.scheduler.reschedule(format(new Date(), "yyyy-MM-dd"), {
+      reason: rescheduleReason,
+      trigger: "manual",
+    });
+    setRescheduleOpen(false);
+    await load();
+  };
 
   return (
-    <div className="space-y-5">
-      <section className="panel p-5">
-        <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Today</p>
-        <h1 className="font-display text-3xl font-bold">Mission Control</h1>
-        {schedule && (
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            Date: {schedule.plan_date} • Status: {schedule.status} • Day score: {schedule.completion_score ?? "-"}
-          </p>
+    <div className="grid gap-6 xl:grid-cols-5">
+      <section className="xl:col-span-3">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Today’s schedule</h1>
+            <p className="text-sm text-[rgb(var(--text-dim))]">{format(new Date(), "EEEE, MMMM do")}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRescheduleOpen(true)}
+              className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-elevated))] px-3 py-2 text-sm font-medium"
+            >
+              Reschedule
+            </button>
+            {!plan ? (
+              <button
+                type="button"
+                onClick={() => void onGenerateSchedule()}
+                className="inline-flex items-center gap-2 rounded-xl bg-[rgb(var(--primary))] px-3 py-2 text-sm font-semibold text-white"
+              >
+                <WandSparkles className="h-4 w-4" /> Generate schedule
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="card p-8 text-sm text-[rgb(var(--text-dim))]">Loading timeline...</div>
+        ) : error ? (
+          <div className="card p-6 text-sm text-[rgb(var(--danger))]">{error}</div>
+        ) : plan?.blocks?.length ? (
+          <div className="space-y-3">
+            {plan.blocks.map((block) => (
+              <TimelineBlock key={block.id} block={block} onStart={onStartBlock} onComplete={onCompleteBlock} />
+            ))}
+          </div>
+        ) : (
+          <div className="card p-8 text-center">
+            <CalendarClock className="mx-auto h-8 w-8 text-[rgb(var(--text-dim))]" />
+            <p className="mt-2 text-sm text-[rgb(var(--text-dim))]">No schedule for today yet.</p>
+          </div>
         )}
-        {error && <p className="mt-2 text-red-600">{error}</p>}
       </section>
 
-      <ScheduleTimeline blocks={schedule?.blocks || []} />
+      <aside className="space-y-4 xl:col-span-2">
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard
+            icon={CheckCircle2}
+            label="Habits Done"
+            value={`${checkedHabits}/${Math.max(habits.length, 1)}`}
+            trend="today"
+            tone="success"
+          />
+          <StatCard
+            icon={AlarmClock}
+            label="Medicine Due"
+            value={nextReminder ? nextReminder.scheduled_time : "None"}
+            trend={nextReminder ? `T-${countdown}` : "all clear"}
+            tone="warning"
+          />
+          <StatCard icon={Flame} label="Best Active Streak" value={`${maxStreak} days`} trend="habits" tone="warning" />
+          <StatCard
+            icon={HeartPulse}
+            label="Energy"
+            value={
+              energyForecast && typeof energyForecast === "object" && "peak_hours" in energyForecast
+                ? (energyForecast.peak_hours as string[]).slice(0, 1).join(", ") || "N/A"
+                : "N/A"
+            }
+            trend="peak window"
+            tone="primary"
+          />
+        </div>
+
+        <section className="card p-4">
+          <h3 className="text-sm font-semibold">Upcoming reminders</h3>
+          <div className="mt-3 space-y-2">
+            {reminders.slice(0, 3).map((item) => (
+              <div key={`${item.medicine_name}-${item.scheduled_time}`} className="rounded-xl bg-[rgb(var(--bg-muted))] p-2">
+                <p className="text-sm font-medium">{item.medicine_name}</p>
+                <p className="text-xs text-[rgb(var(--text-dim))]">
+                  {item.dosage} at {item.scheduled_time}
+                </p>
+              </div>
+            ))}
+            {reminders.length === 0 ? (
+              <p className="text-xs text-[rgb(var(--text-dim))]">No upcoming reminders.</p>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="card p-4">
+          <h3 className="text-sm font-semibold">Quick actions</h3>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button className="rounded-xl bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm">Check In Habit</button>
+            <button className="rounded-xl bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm">Log Medicine</button>
+            <button className="rounded-xl bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm">New Journal Entry</button>
+            <button className="rounded-xl bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm">Voice Command</button>
+          </div>
+        </section>
+
+        <section className="card p-4">
+          <h3 className="mb-2 text-sm font-semibold">Live status</h3>
+          <p className="text-sm text-[rgb(var(--text-dim))]">
+            <Sparkles className="mr-1 inline h-4 w-4 text-[rgb(var(--primary))]" />
+            Mission control synchronized with scheduler, habits, medicine, and fitness modules.
+          </p>
+          <p className="mt-2 text-xs text-[rgb(var(--text-dim))]">
+            <Stethoscope className="mr-1 inline h-4 w-4" /> {completedBlocks} schedule blocks completed today.
+          </p>
+        </section>
+      </aside>
+
+      <Modal
+        open={rescheduleOpen}
+        title="AI Reschedule"
+        onClose={() => setRescheduleOpen(false)}
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-[rgb(var(--border))] px-3 py-2 text-sm"
+              onClick={() => setRescheduleOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-[rgb(var(--primary))] px-3 py-2 text-sm font-semibold text-white"
+              onClick={() => void onReschedule()}
+            >
+              Reschedule now
+            </button>
+          </div>
+        }
+      >
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">What should change?</span>
+          <textarea
+            value={rescheduleReason}
+            onChange={(event) => setRescheduleReason(event.target.value)}
+            className="h-24 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] p-3 text-sm"
+          />
+        </label>
+      </Modal>
     </div>
   );
 }

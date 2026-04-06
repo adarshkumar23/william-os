@@ -9,10 +9,10 @@ import uuid
 from datetime import date, time
 from enum import Enum
 
+from app.core.database import Base
 from sqlalchemy import (
     Boolean,
     Date,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
@@ -20,10 +20,11 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
 
 
 class MedicineType(str, Enum):
@@ -38,13 +39,16 @@ class Medicine(Base):
     __table_args__ = {"schema": "medicine"}
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     dosage: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g. "500mg"
     medicine_type: Mapped[MedicineType] = mapped_column(
-        SAEnum(MedicineType, schema="medicine"), default=MedicineType.SUPPLEMENT,
+        SAEnum(MedicineType, schema="medicine"),
+        default=MedicineType.SUPPLEMENT,
     )
     instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -60,8 +64,10 @@ class Medicine(Base):
     refill_reminder_days: Mapped[int] = mapped_column(Integer, default=7)
     remaining_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    logs: Mapped[list["MedicineLog"]] = relationship(
-        back_populates="medicine", cascade="all, delete-orphan", lazy="selectin",
+    logs: Mapped[list[MedicineLog]] = relationship(
+        back_populates="medicine",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
 
@@ -81,8 +87,10 @@ class MedicineLog(Base):
     )
 
     medicine_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("medicine.medicines.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("medicine.medicines.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     log_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     scheduled_time: Mapped[time] = mapped_column(Time, nullable=False)

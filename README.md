@@ -18,6 +18,9 @@ curl http://localhost:8000/health
 
 # 4. Open API docs
 open http://localhost:8000/docs
+
+# 5. Open web dashboard
+open http://localhost:3000
 ```
 
 ## Architecture
@@ -83,7 +86,21 @@ make lint          # Check code quality
 make migrate       # Run database migrations
 make db-reset      # Reset database
 make test-load     # Run Locust load tests
+make openclaw-setup # Scaffold OpenClaw gateway integration
 ```
+
+## OpenClaw Gateway
+
+Multi-channel chat ingress can be routed to WILLIAM OS through the OpenClaw skill in `openclaw-skill/william-os`.
+
+Setup steps:
+
+1. Run `chmod +x scripts/setup-openclaw.sh` once.
+2. Run `make openclaw-setup`.
+3. Edit `/opt/openclaw/.env` and set `WILLIAM_GATEWAY_BEARER_TOKEN`.
+4. Install and start the systemd unit from `infra/systemd/openclaw.service`.
+
+By default, the skill routes structured commands (`/today`, `/habits`, `/sleep`, `/briefing`, `/journal`, `/checkin`) and forwards free text to `/api/v1/voice/command`.
 
 ## Operations Playbooks
 

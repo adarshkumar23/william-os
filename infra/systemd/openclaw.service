@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenClaw Gateway for WILLIAM OS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/openclaw
+EnvironmentFile=/opt/openclaw/.env
+ExecStart=/opt/openclaw/.venv/bin/python -m openclaw serve --host 0.0.0.0 --port 8090 --skills-dir /opt/openclaw/skills
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

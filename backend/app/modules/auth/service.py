@@ -74,8 +74,7 @@ class AuthService:
                 await self.db.flush()
                 if user.failed_login_attempts >= 10:
                     raise AuthenticationError(
-                        "Account locked after too many failed attempts. "
-                        "Contact support to unlock."
+                        "Account locked after too many failed attempts. Contact support to unlock."
                     )
             raise AuthenticationError()
 

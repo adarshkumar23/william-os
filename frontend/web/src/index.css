@@ -1,9 +1,37 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --bg: 248 250 252;
+  --bg-elevated: 255 255 255;
+  --bg-muted: 241 245 249;
+  --text: 15 23 42;
+  --text-dim: 71 85 105;
+  --border: 203 213 225;
+  --primary: 59 130 246;
+  --success: 16 185 129;
+  --warning: 245 158 11;
+  --danger: 244 63 94;
+  --ring: 147 197 253;
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: 15 23 42;
+  --bg-elevated: 30 41 59;
+  --bg-muted: 51 65 85;
+  --text: 226 232 240;
+  --text-dim: 148 163 184;
+  --border: 71 85 105;
+  --primary: 59 130 246;
+  --success: 16 185 129;
+  --warning: 245 158 11;
+  --danger: 244 63 94;
+  --ring: 59 130 246;
 }
 
 html,
@@ -13,40 +41,41 @@ body,
 }
 
 body {
-  @apply bg-william-paper text-slate-900 font-body antialiased;
-  background-image:
-    radial-gradient(circle at 18% 20%, rgba(14, 165, 233, 0.16) 0%, transparent 36%),
-    radial-gradient(circle at 84% 8%, rgba(249, 115, 22, 0.15) 0%, transparent 30%),
-    radial-gradient(circle at 62% 84%, rgba(20, 184, 166, 0.12) 0%, transparent 28%);
+  @apply m-0 bg-[rgb(var(--bg))] text-[rgb(var(--text))] antialiased transition-colors duration-300;
+  font-family: Inter, sans-serif;
 }
 
-.dark body {
-  color-scheme: dark;
-  @apply bg-william-ink text-slate-100;
-  background-image:
-    radial-gradient(circle at 15% 15%, rgba(14, 165, 233, 0.22) 0%, transparent 38%),
-    radial-gradient(circle at 92% 4%, rgba(225, 29, 72, 0.2) 0%, transparent 30%),
-    radial-gradient(circle at 70% 78%, rgba(20, 184, 166, 0.16) 0%, transparent 24%);
+* {
+  @apply border-[rgb(var(--border))];
 }
 
-@layer components {
-  .panel {
-    @apply rounded-2xl border border-slate-200/70 bg-white/75 backdrop-blur-md shadow-lg;
-  }
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
 
-  .dark .panel {
-    @apply border-slate-700/60 bg-slate-900/70;
-  }
+::-webkit-scrollbar-track {
+  background: rgb(var(--bg-muted));
+}
 
-  .btn-primary {
-    @apply rounded-xl bg-gradient-to-r from-william-electric to-william-mint px-4 py-2 font-semibold text-white shadow-glow transition hover:scale-[1.01] active:scale-[0.99];
-  }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border));
+  border-radius: 9999px;
+}
 
-  .btn-secondary {
-    @apply rounded-xl border border-slate-300 bg-white/80 px-4 py-2 font-semibold text-slate-800 transition hover:bg-slate-50;
-  }
+.glass {
+  background: linear-gradient(
+    155deg,
+    rgba(var(--bg-elevated), 0.85),
+    rgba(var(--bg-muted), 0.75)
+  );
+  backdrop-filter: blur(12px);
+}
 
-  .dark .btn-secondary {
-    @apply border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800;
-  }
+.card {
+  @apply rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-elevated))] shadow-xl shadow-slate-900/10;
+}
+
+.data-font {
+  font-family: "JetBrains Mono", monospace;
 }

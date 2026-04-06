@@ -9,20 +9,23 @@ import uuid
 from datetime import date, datetime, time
 from enum import Enum
 
+from app.core.database import Base
 from sqlalchemy import (
     Boolean,
     Date,
-    Enum as SAEnum,
     Float,
     ForeignKey,
     Index,
     Integer,
-    String, Text, Time,
+    String,
+    Text,
+    Time,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
 
 
 class PlanStatus(str, Enum):
@@ -43,8 +46,8 @@ class BlockCategory(str, Enum):
     HEALTH = "health"
     COMMUTE = "commute"
     BREAK = "break"
-    ROUTINE = "routine"     # morning/evening routines
-    BUFFER = "buffer"       # flex time
+    ROUTINE = "routine"  # morning/evening routines
+    BUFFER = "buffer"  # flex time
 
 
 class BlockStatus(str, Enum):
@@ -70,12 +73,15 @@ class DailyPlan(Base):
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     plan_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     status: Mapped[PlanStatus] = mapped_column(
-        SAEnum(PlanStatus, schema="scheduler"), default=PlanStatus.DRAFT,
+        SAEnum(PlanStatus, schema="scheduler"),
+        default=PlanStatus.DRAFT,
     )
 
     # AI generation metadata
@@ -91,12 +97,16 @@ class DailyPlan(Base):
     energy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Relationships
-    blocks: Mapped[list["ScheduleBlock"]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan",
-        order_by="ScheduleBlock.start_time", lazy="selectin",
+    blocks: Mapped[list[ScheduleBlock]] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        order_by="ScheduleBlock.start_time",
+        lazy="selectin",
     )
-    reschedule_log: Mapped[list["RescheduleEvent"]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan", lazy="selectin",
+    reschedule_log: Mapped[list[RescheduleEvent]] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
 
@@ -107,20 +117,23 @@ class ScheduleBlock(Base):
     __table_args__ = {"schema": "scheduler"}
 
     plan_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("scheduler.daily_plans.id", ondelete="CASCADE"),
+        UUID(as_uuid=True),
+        ForeignKey("scheduler.daily_plans.id", ondelete="CASCADE"),
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[BlockCategory] = mapped_column(
-        SAEnum(BlockCategory, schema="scheduler"), nullable=False,
+        SAEnum(BlockCategory, schema="scheduler"),
+        nullable=False,
     )
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
 
     status: Mapped[BlockStatus] = mapped_column(
-        SAEnum(BlockStatus, schema="scheduler"), default=BlockStatus.PENDING,
+        SAEnum(BlockStatus, schema="scheduler"),
+        default=BlockStatus.PENDING,
     )
     priority: Mapped[int] = mapped_column(Integer, default=5)  # 1=highest, 10=lowest
     is_fixed: Mapped[bool] = mapped_column(Boolean, default=False)  # immovable blocks
@@ -146,7 +159,8 @@ class RescheduleEvent(Base):
     __table_args__ = {"schema": "scheduler"}
 
     plan_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("scheduler.daily_plans.id", ondelete="CASCADE"),
+        UUID(as_uuid=True),
+        ForeignKey("scheduler.daily_plans.id", ondelete="CASCADE"),
         nullable=False,
     )
     block_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import UTC, datetime
 
 import httpx
@@ -23,7 +23,7 @@ from app.modules.decisions.schemas import (
     DecisionStats,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)

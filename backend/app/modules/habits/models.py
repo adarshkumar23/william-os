@@ -9,10 +9,10 @@ import uuid
 from datetime import date, datetime, time
 from enum import Enum
 
+from app.core.database import Base
 from sqlalchemy import (
     Boolean,
     Date,
-    Enum as SAEnum,
     Float,
     ForeignKey,
     Integer,
@@ -21,10 +21,11 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
 
 
 class HabitFrequency(str, Enum):
@@ -39,8 +40,10 @@ class Habit(Base):
     __table_args__ = {"schema": "habits"}
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -48,7 +51,8 @@ class Habit(Base):
     icon: Mapped[str] = mapped_column(String(10), default="✅")
 
     frequency: Mapped[HabitFrequency] = mapped_column(
-        SAEnum(HabitFrequency, schema="habits"), default=HabitFrequency.DAILY,
+        SAEnum(HabitFrequency, schema="habits"),
+        default=HabitFrequency.DAILY,
     )
     days_of_week: Mapped[list[int]] = mapped_column(JSONB, default=list)  # 0=Mon..6=Sun
     preferred_time: Mapped[time | None] = mapped_column(Time, nullable=True)
@@ -66,8 +70,10 @@ class Habit(Base):
     auto_schedule: Mapped[bool] = mapped_column(Boolean, default=True)
     schedule_category: Mapped[str] = mapped_column(String(20), default="routine")
 
-    check_ins: Mapped[list["HabitCheckIn"]] = relationship(
-        back_populates="habit", cascade="all, delete-orphan", lazy="selectin",
+    check_ins: Mapped[list[HabitCheckIn]] = relationship(
+        back_populates="habit",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
 
 
@@ -86,8 +92,10 @@ class HabitCheckIn(Base):
     )
 
     habit_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("habits.habits.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("habits.habits.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     check_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -106,8 +114,10 @@ class ProcrastinationSignal(Base):
     __table_args__ = {"schema": "habits"}
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     signal_date: Mapped[date] = mapped_column(Date, nullable=False)
     missed_habits: Mapped[list[str]] = mapped_column(JSONB, default=list)

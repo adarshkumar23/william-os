@@ -6,7 +6,6 @@ Decision assistant endpoints for analysis and outcomes.
 from __future__ import annotations
 
 import uuid
-from datetime import date
 
 import structlog
 from app.core.database import get_db

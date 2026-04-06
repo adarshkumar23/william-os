@@ -73,3 +73,6 @@ clean: ## Remove build artifacts
 
 shell: ## Open Python shell with app context
 	cd backend && python -c "import asyncio; from app.main import app; print('WILLIAM OS Shell Ready')"
+
+openclaw-setup: ## Prepare OpenClaw skill + runtime scaffolding
+	bash scripts/setup-openclaw.sh

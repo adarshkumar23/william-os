@@ -1,109 +1,190 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Clock3, Play, RotateCcw } from "lucide-react";
 
+import ChartWrapper from "../components/ChartWrapper";
+import FlashCard from "../components/FlashCard";
 import { api } from "../services/api";
+import { MockTest, RevisionCard, Subject } from "../types/api";
 
 export default function StudyPage() {
-  const [subjects, setSubjects] = useState<any[]>([]);
-  const [progress, setProgress] = useState<any[]>([]);
-  const [cardsDue, setCardsDue] = useState<any[]>([]);
-
-  const [subjectId, setSubjectId] = useState("");
-  const [duration, setDuration] = useState(60);
-  const [comprehension, setComprehension] = useState(7);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [cardsDue, setCardsDue] = useState<RevisionCard[]>([]);
+  const [mocks, setMocks] = useState<MockTest[]>([]);
+  const [progress, setProgress] = useState<Array<Record<string, unknown>>>([]);
+  const [secondsLeft, setSecondsLeft] = useState(25 * 60);
+  const [running, setRunning] = useState(false);
 
   const load = async () => {
-    const [subjectData, progressData, dueData] = await Promise.all([
-      api.study.subjects().catch(() => []),
-      api.study.progress().catch(() => []),
-      api.study.cardsDue().catch(() => []),
+    const [subjectList, dueCards, mockTests, progressRows] = await Promise.all([
+      api.study.listSubjects(),
+      api.study.cardsDue(),
+      api.study.listMocks({ limit: 10, offset: 0 }),
+      api.study.progress(),
     ]);
-    setSubjects(subjectData);
-    setProgress(progressData);
-    setCardsDue(dueData);
-    if (!subjectId && subjectData.length > 0) {
-      setSubjectId(subjectData[0].id);
-    }
+
+    setSubjects(subjectList);
+    setCardsDue(dueCards);
+    setMocks(mockTests);
+    setProgress(progressRows);
   };
 
   useEffect(() => {
     void load();
   }, []);
 
-  const handleLogSession = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!subjectId) {
+  useEffect(() => {
+    if (!running) {
       return;
     }
 
-    await api.study.logSession({
-      subject_id: subjectId,
-      duration_minutes: duration,
-      comprehension_score: comprehension,
-      topics_covered: ["Session logged from web"],
-      session_date: new Date().toISOString().slice(0, 10),
-    });
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          setRunning(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
+    return () => window.clearInterval(timer);
+  }, [running]);
+
+  const timerLabel = useMemo(() => {
+    const minutes = Math.floor(secondsLeft / 60)
+      .toString()
+      .padStart(2, "0");
+    const seconds = (secondsLeft % 60).toString().padStart(2, "0");
+    return `${minutes}:${seconds}`;
+  }, [secondsLeft]);
+
+  const onCardRate = async (cardId: string, quality: number) => {
+    await api.study.reviewCard(cardId, quality);
     await load();
   };
 
-  return (
-    <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-      <section className="space-y-5">
-        <div className="panel p-5">
-          <h1 className="font-display text-3xl font-bold">IAS Study Mentor</h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Cards due today: {cardsDue.length}</p>
-        </div>
+  const onPomodoroComplete = async () => {
+    if (!subjects[0]) {
+      return;
+    }
+    await api.study.createSession({
+      subject_id: subjects[0].id,
+      duration_minutes: 25,
+      topics_covered: ["Pomodoro focus block"],
+      comprehension_score: 4,
+      session_date: new Date().toISOString().slice(0, 10),
+    });
+    setSecondsLeft(25 * 60);
+    await load();
+  };
 
-        <div className="panel p-4">
-          <h2 className="font-display text-xl font-bold">Progress by Subject</h2>
-          <div className="mt-3 space-y-2">
-            {progress.map((item) => (
-              <div key={item.subject} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                <p className="font-semibold">{item.subject}</p>
-                <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Hours: {item.hours_studied} • Comprehension: {item.avg_comprehension} • Cards due: {item.cards_due} • Mock avg: {item.mock_avg}%
-                </p>
-              </div>
-            ))}
-          </div>
+  useEffect(() => {
+    if (secondsLeft === 0) {
+      void onPomodoroComplete();
+    }
+  }, [secondsLeft]);
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-bold">Study Mentor</h1>
+        <p className="text-sm text-[rgb(var(--text-dim))]">Revision, timer flow, and progress analytics.</p>
+      </header>
+
+      <section className="card p-4">
+        <h2 className="mb-3 text-lg font-semibold">Subjects</h2>
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          {subjects.map((subject, index) => (
+            <article key={subject.id} className="min-w-[220px] rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] p-3">
+              <div
+                className="mb-2 h-1 rounded-full"
+                style={{ background: ["#3B82F6", "#10B981", "#F59E0B", "#F43F5E"][index % 4] }}
+              />
+              <p className="text-sm font-semibold">{subject.name}</p>
+            </article>
+          ))}
         </div>
       </section>
 
-      <aside className="panel p-4">
-        <h2 className="font-display text-xl font-bold">Log Study Session</h2>
-        <form className="mt-3 space-y-3" onSubmit={handleLogSession}>
-          <select
-            className="w-full rounded-xl border border-slate-300 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900"
-            value={subjectId}
-            onChange={(event) => setSubjectId(event.target.value)}
-          >
-            {subjects.map((subject) => (
-              <option key={subject.id} value={subject.id}>
-                {subject.name}
-              </option>
-            ))}
-          </select>
-          <input
-            className="w-full rounded-xl border border-slate-300 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900"
-            type="number"
-            min={15}
-            max={480}
-            value={duration}
-            onChange={(event) => setDuration(Number(event.target.value))}
-          />
-          <input
-            className="w-full rounded-xl border border-slate-300 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900"
-            type="number"
-            min={1}
-            max={10}
-            value={comprehension}
-            onChange={(event) => setComprehension(Number(event.target.value))}
-          />
-          <button className="btn-primary w-full" type="submit">
-            Save Session
-          </button>
-        </form>
-      </aside>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Revision cards due</h2>
+          {cardsDue[0] ? (
+            <FlashCard
+              question={cardsDue[0].question}
+              answer={cardsDue[0].answer}
+              onRate={(quality) => onCardRate(cardsDue[0].id, quality)}
+            />
+          ) : (
+            <div className="card p-6 text-sm text-[rgb(var(--text-dim))]">No cards due today.</div>
+          )}
+        </div>
+
+        <article className="card p-4">
+          <h2 className="text-lg font-semibold">Pomodoro timer</h2>
+          <p className="mt-1 text-sm text-[rgb(var(--text-dim))]">25 min focus / 5 min reset</p>
+          <div className="mt-6 text-center">
+            <p className="data-font text-6xl font-bold">{timerLabel}</p>
+          </div>
+          <div className="mt-5 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRunning(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-[rgb(var(--primary))] px-4 py-2 text-sm font-semibold text-white"
+            >
+              <Play className="h-4 w-4" /> Start
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRunning(false);
+                setSecondsLeft(25 * 60);
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] px-4 py-2 text-sm"
+            >
+              <RotateCcw className="h-4 w-4" /> Reset
+            </button>
+          </div>
+          <p className="mt-4 text-center text-xs text-[rgb(var(--text-dim))]">
+            <Clock3 className="mr-1 inline h-3.5 w-3.5" /> Session logs automatically when completed.
+          </p>
+        </article>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ChartWrapper title="Mock test scores" subtitle="Recent attempts">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={mocks.map((mock) => ({ name: mock.test_name.slice(0, 12), score: mock.percentage }))}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+              <XAxis dataKey="name" tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
+              <YAxis tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} domain={[0, 100]} />
+              <Tooltip />
+              <Bar dataKey="score" fill="rgb(var(--primary))" radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartWrapper>
+
+        <ChartWrapper title="Progress overview" subtitle="Hours and cards due by subject">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={progress.map((row) => ({
+                subject: String(row.subject ?? "N/A").slice(0, 10),
+                hours: Number(row.hours_studied ?? 0),
+                cards: Number(row.cards_due ?? 0),
+              }))}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+              <XAxis dataKey="subject" tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
+              <YAxis tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
+              <Tooltip />
+              <Bar dataKey="hours" stackId="a" fill="rgb(var(--primary))" />
+              <Bar dataKey="cards" stackId="a" fill="rgb(var(--success))" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartWrapper>
+      </section>
     </div>
   );
 }

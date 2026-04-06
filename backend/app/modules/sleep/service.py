@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 
 import httpx
 import structlog
@@ -24,7 +24,7 @@ from app.modules.sleep.schemas import (
     SleepStats,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
