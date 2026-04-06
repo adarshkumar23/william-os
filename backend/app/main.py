@@ -140,18 +140,26 @@ def register_routes(app: FastAPI) -> None:
     """Register all module routers under /api/v1."""
     from app.modules.auth.routes import router as auth_router
     from app.modules.email_intel.routes import router as email_router
+    from app.modules.fitness.routes import router as fitness_router
     from app.modules.habits.routes import router as habits_router
     from app.modules.journal.routes import router as journal_router
     from app.modules.medicine.routes import router as medicine_router
+    from app.modules.messaging.routes import router as messaging_router
     from app.modules.scheduler.routes import router as scheduler_router
+    from app.modules.study.routes import router as study_router
+    from app.modules.voice.routes import router as voice_router
 
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=prefix)
     app.include_router(scheduler_router, prefix=prefix)
     app.include_router(habits_router, prefix=prefix)
+    app.include_router(fitness_router, prefix=prefix)
     app.include_router(journal_router, prefix=prefix)
     app.include_router(medicine_router, prefix=prefix)
     app.include_router(email_router, prefix=prefix)
+    app.include_router(messaging_router, prefix=prefix)
+    app.include_router(voice_router, prefix=prefix)
+    app.include_router(study_router, prefix=prefix)
     # Future modules added here:
     # app.include_router(audit_router, prefix=prefix)
 

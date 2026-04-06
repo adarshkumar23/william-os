@@ -42,6 +42,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=0, minute=0),  # midnight UTC
         "options": {"queue": "scheduler"},
     },
+    "daily-energy-forecast-generation": {
+        "task": "app.worker.generate_daily_energy_forecasts",
+        "schedule": crontab(hour=5, minute=0),  # 5 AM UTC
+        "options": {"queue": "analysis"},
+    },
     "prewake-email-briefing": {
         "task": "app.worker.send_prewake_briefings",
         "schedule": crontab(minute="*/15"),  # check every 15 min
@@ -121,6 +126,60 @@ def generate_all_schedules(self):
         self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
 
 
+@celery_app.task(
+    name="app.worker.generate_daily_energy_forecasts",
+    bind=True,
+    max_retries=2,
+)
+def generate_daily_energy_forecasts(self):
+    """5 AM cycle: generate today's energy forecast for all active users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.energy_forecast")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.fitness.service import FitnessService
+
+        target_date = date.today()
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            service = FitnessService(db)
+            for user in users:
+                try:
+                    forecast = await service.generate_energy_forecast(
+                        user_id=user.id,
+                        forecast_date=target_date,
+                    )
+                    logger.info(
+                        "energy_forecast_generated",
+                        user_id=str(user.id),
+                        date=str(target_date),
+                        generated_by=forecast.generated_by,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "energy_forecast_generation_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    try:
+        _run_async(_run())
+    except Exception as exc:
+        self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
+
+
 @celery_app.task(name="app.worker.send_prewake_briefings")
 def send_prewake_briefings():
     """Check if any user's wake time is approaching and send briefing."""
@@ -135,6 +194,7 @@ def send_prewake_briefings():
         from app.core.database import async_session_factory
         from app.modules.auth.models import User
         from app.modules.email_intel.service import EmailIntelService
+        from app.modules.messaging.service import MessagingService
 
         now = datetime.now(UTC)
 
@@ -145,6 +205,7 @@ def send_prewake_briefings():
             users = result.scalars().all()
 
             service = EmailIntelService(db)
+            messaging = MessagingService(db)
             for user in users:
                 if not _is_wake_time_approaching(
                     user.wake_time, now, settings.prewake_offset_minutes
@@ -158,6 +219,10 @@ def send_prewake_briefings():
                         user_id=str(user.id),
                         wake_time=user.wake_time,
                         briefing=briefing.model_dump(mode="json"),
+                    )
+                    await messaging.send_morning_briefing(
+                        user_id=user.id,
+                        briefing_data=briefing.model_dump(mode="json"),
                     )
                 except Exception as e:
                     logger.error(
@@ -185,6 +250,7 @@ def check_procrastination():
         from app.core.database import async_session_factory
         from app.modules.auth.models import User
         from app.modules.habits.service import HabitsService
+        from app.modules.messaging.service import MessagingService
 
         today = date.today()
 
@@ -195,6 +261,7 @@ def check_procrastination():
             users = result.scalars().all()
 
             service = HabitsService(db)
+            messaging = MessagingService(db)
             for user in users:
                 try:
                     signal = await service.detect_procrastination(
@@ -207,6 +274,10 @@ def check_procrastination():
                             user_id=str(user.id),
                             severity=signal.severity,
                             missed_habits=len(signal.missed_habits),
+                        )
+                        await messaging.send_procrastination_alert(
+                            user_id=user.id,
+                            signal_data=signal.model_dump(mode="json"),
                         )
                     else:
                         logger.debug("procrastination_no_signal", user_id=str(user.id))
@@ -236,6 +307,7 @@ def check_medicine_reminders():
         from app.core.database import async_session_factory
         from app.modules.auth.models import User
         from app.modules.medicine.service import MedicineService
+        from app.modules.messaging.service import MessagingService
 
         async with async_session_factory() as db:
             result = await db.execute(
@@ -244,6 +316,7 @@ def check_medicine_reminders():
             users = result.scalars().all()
 
             service = MedicineService(db)
+            messaging = MessagingService(db)
             for user in users:
                 try:
                     reminders = await service.get_upcoming(user_id=user.id, within_minutes=5)
@@ -255,6 +328,10 @@ def check_medicine_reminders():
                             dosage=reminder.dosage,
                             scheduled_time=reminder.scheduled_time,
                             with_food=reminder.with_food,
+                        )
+                        await messaging.send_medicine_reminder(
+                            user_id=user.id,
+                            reminder_data=reminder.model_dump(mode="json"),
                         )
                 except Exception as e:
                     logger.error(

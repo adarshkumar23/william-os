@@ -13,10 +13,14 @@ from app.modules.audit.models import AuditLog  # noqa
 # Import all models so Alembic sees them
 from app.modules.auth.models import Family, RefreshTokenBlacklist, User, UserDevice  # noqa
 from app.modules.email_intel.models import EmailAccount, EmailSummary  # noqa
+from app.modules.fitness.models import EnergyForecast, FitnessDevice, HealthMetric, WorkoutLog  # noqa
 from app.modules.habits.models import Habit, HabitCheckIn, ProcrastinationSignal  # noqa
 from app.modules.journal.models import JournalEntry  # noqa
+from app.modules.messaging.models import NotificationLog, TelegramUser  # noqa
 from app.modules.medicine.models import Medicine, MedicineLog  # noqa
 from app.modules.scheduler.models import DailyPlan, RescheduleEvent, ScheduleBlock  # noqa
+from app.modules.study.models import MockTest, RevisionCard, StudySession, Subject  # noqa
+from app.modules.voice.models import VoiceCommand  # noqa
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -35,6 +39,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_schemas=True,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -43,7 +48,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_schemas=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

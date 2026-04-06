@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-william-paper text-slate-900 font-body antialiased;
+  background-image:
+    radial-gradient(circle at 18% 20%, rgba(14, 165, 233, 0.16) 0%, transparent 36%),
+    radial-gradient(circle at 84% 8%, rgba(249, 115, 22, 0.15) 0%, transparent 30%),
+    radial-gradient(circle at 62% 84%, rgba(20, 184, 166, 0.12) 0%, transparent 28%);
+}
+
+.dark body {
+  color-scheme: dark;
+  @apply bg-william-ink text-slate-100;
+  background-image:
+    radial-gradient(circle at 15% 15%, rgba(14, 165, 233, 0.22) 0%, transparent 38%),
+    radial-gradient(circle at 92% 4%, rgba(225, 29, 72, 0.2) 0%, transparent 30%),
+    radial-gradient(circle at 70% 78%, rgba(20, 184, 166, 0.16) 0%, transparent 24%);
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-slate-200/70 bg-white/75 backdrop-blur-md shadow-lg;
+  }
+
+  .dark .panel {
+    @apply border-slate-700/60 bg-slate-900/70;
+  }
+
+  .btn-primary {
+    @apply rounded-xl bg-gradient-to-r from-william-electric to-william-mint px-4 py-2 font-semibold text-white shadow-glow transition hover:scale-[1.01] active:scale-[0.99];
+  }
+
+  .btn-secondary {
+    @apply rounded-xl border border-slate-300 bg-white/80 px-4 py-2 font-semibold text-slate-800 transition hover:bg-slate-50;
+  }
+
+  .dark .btn-secondary {
+    @apply border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800;
+  }
+}
