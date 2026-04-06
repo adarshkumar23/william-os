@@ -57,6 +57,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/30"),  # every 30 min during day
         "options": {"queue": "analysis"},
     },
+    "cross-module-intelligence-cycle": {
+        "task": "app.worker.run_cross_module_intelligence",
+        "schedule": crontab(minute="*/30"),  # every 30 min
+        "options": {"queue": "analysis"},
+    },
     "medicine-reminder-check": {
         "task": "app.worker.check_medicine_reminders",
         "schedule": crontab(minute="*/5"),  # every 5 min
@@ -304,6 +309,50 @@ def check_procrastination():
                 except Exception as e:
                     logger.error(
                         "procrastination_check_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.run_cross_module_intelligence")
+def run_cross_module_intelligence():
+    """Collect cross-module signals and evaluate active adjustments for all users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.intelligence")
+    logger.info("cross_module_intelligence_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.intelligence.service import IntelligenceService
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            service = IntelligenceService(db)
+            for user in users:
+                try:
+                    signals = await service.collect_signals(user_id=user.id)
+                    adjustments = await service.apply_cross_rules(user_id=user.id)
+                    logger.info(
+                        "cross_module_intelligence_processed",
+                        user_id=str(user.id),
+                        signals=len(signals),
+                        adjustments=len(adjustments),
+                    )
+                except Exception as e:
+                    logger.error(
+                        "cross_module_intelligence_failed",
                         user_id=str(user.id),
                         error=str(e),
                     )

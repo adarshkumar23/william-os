@@ -45,6 +45,10 @@ class EventType(str, Enum):
     # Email
     EMAIL_SUMMARY_READY = "email.summary_ready"
 
+    # Intelligence
+    INTELLIGENCE_SIGNALS_COLLECTED = "intelligence.signals_collected"
+    INTELLIGENCE_RULES_APPLIED = "intelligence.rules_applied"
+
     # System
     DAILY_CYCLE_MIDNIGHT = "system.midnight_cycle"
     DAILY_CYCLE_PREWAKE = "system.prewake_cycle"

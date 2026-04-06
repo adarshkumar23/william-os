@@ -38,6 +38,7 @@ SCHEMA_TRANSLATE_MAP = {
     "sleep": None,
     "decisions": None,
     "messaging": None,
+    "intelligence": None,
 }
 
 

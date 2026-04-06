@@ -168,6 +168,7 @@ def register_routes(app: FastAPI) -> None:
     from app.modules.export.routes import router as export_router
     from app.modules.fitness.routes import router as fitness_router
     from app.modules.habits.routes import router as habits_router
+    from app.modules.intelligence.routes import router as intelligence_router
     from app.modules.journal.routes import router as journal_router
     from app.modules.medicine.routes import router as medicine_router
     from app.modules.messaging.routes import router as messaging_router
@@ -181,6 +182,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(auth_router, prefix=prefix)
     app.include_router(scheduler_router, prefix=prefix)
     app.include_router(habits_router, prefix=prefix)
+    app.include_router(intelligence_router, prefix=prefix)
     app.include_router(fitness_router, prefix=prefix)
     app.include_router(journal_router, prefix=prefix)
     app.include_router(medicine_router, prefix=prefix)
