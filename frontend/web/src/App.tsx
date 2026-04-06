@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 
 import { AuthProvider } from "./contexts/AuthContext";
 import Navbar from "./components/Navbar";
+import OfflineBanner from "./components/OfflineBanner";
 import ProtectedRoute from "./components/ProtectedRoute";
 import DashboardPage from "./pages/DashboardPage";
 import FitnessPage from "./pages/FitnessPage";
@@ -28,6 +29,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <OfflineBanner />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

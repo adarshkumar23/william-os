@@ -44,6 +44,15 @@ test-unit: ## Run unit tests only
 test-load: ## Run load tests (Locust)
 	cd backend && locust -f tests/load/locustfile.py --host=http://localhost:8000
 
+test-load-100: ## Headless load test: 100 users, 10 min
+	cd backend && locust -f tests/load/locustfile.py --host=http://localhost:8000 --headless -u 100 -r 10 -t 10m
+
+test-load-smoke: ## Quick headless load smoke test
+	bash scripts/performance-smoke.sh http://localhost:8000 25 5 2m
+
+audit-security: ## Run basic security audit checks
+	bash scripts/security-audit-basics.sh http://localhost:8000
+
 # ── Code Quality ─────────────────────────────────────────────────
 
 lint: ## Run linter

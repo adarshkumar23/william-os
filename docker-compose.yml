@@ -137,6 +137,9 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=william
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infra/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards/json:ro
     depends_on:
       - prometheus
     restart: unless-stopped

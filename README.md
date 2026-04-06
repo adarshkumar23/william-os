@@ -85,6 +85,13 @@ make db-reset      # Reset database
 make test-load     # Run Locust load tests
 ```
 
+## Operations Playbooks
+
+- Privacy audit: `docs/PRIVACY_AUDIT.md`
+- Security audit: `docs/SECURITY_AUDIT.md`
+- Performance pass: `docs/PERFORMANCE_PASS.md`
+- Deployment runbook: `docs/DEPLOYMENT_RUNBOOK.md`
+
 ## API Endpoints
 
 All responses use envelope: `{ "ok": bool, "data": T, "error": str }`

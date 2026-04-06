@@ -1,23 +1,31 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import ScheduleTimeline from "../components/ScheduleTimeline";
+import { useRealtimeSync } from "../hooks/useRealtimeSync";
 import { api } from "../services/api";
 
 export default function DashboardPage() {
   const [schedule, setSchedule] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const plan = await api.schedule.today();
-        setSchedule(plan);
-      } catch (err: any) {
-        setError(err?.response?.data?.error || "Unable to load today's schedule");
-      }
-    };
-    void load();
+  const load = useCallback(async () => {
+    try {
+      const plan = await api.schedule.today();
+      setSchedule(plan);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || "Unable to load today's schedule");
+    }
   }, []);
+
+  useRealtimeSync({
+    onScheduleUpdated: () => {
+      void load();
+    },
+  });
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   return (
     <div className="space-y-5">

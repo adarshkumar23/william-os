@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import HabitCard from "../components/HabitCard";
+import { useRealtimeSync } from "../hooks/useRealtimeSync";
 import { api } from "../services/api";
 
 export default function HabitsPage() {
@@ -9,7 +10,7 @@ export default function HabitsPage() {
 
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const [habitData, checkIns] = await Promise.all([
       api.habits.list(),
       api.habits.dailyCheckIns(today).catch(() => []),
@@ -21,11 +22,17 @@ export default function HabitsPage() {
       map[item.habit_id] = !!item.completed;
     }
     setCheckedToday(map);
-  };
+  }, [today]);
+
+  useRealtimeSync({
+    onHabitCheckedIn: () => {
+      void load();
+    },
+  });
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   return (
     <div className="space-y-5">

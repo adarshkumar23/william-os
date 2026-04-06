@@ -418,6 +418,10 @@ After installation, here's your first day with WILLIAM OS:
 
 ## 10. Production Deployment (Oracle Cloud)
 
+For a production-ready checklist with rollback, TLS validation, and monitoring
+verification, use `docs/DEPLOYMENT_RUNBOOK.md` alongside this quick-start
+section.
+
 ### Oracle Cloud Free Tier Setup
 
 1. **Create account** at `https://cloud.oracle.com`
@@ -456,6 +460,7 @@ docker compose -f docker-compose.yml up -d
 ```bash
 sudo apt install nginx certbot python3-certbot-nginx
 # Configure Nginx to proxy to localhost:8000
+# Use the template at: infra/nginx/william-os.conf
 # Get free SSL with: sudo certbot --nginx -d yourdomain.com
 ```
 

@@ -1,4 +1,10 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
+import {
+  cacheHabitsList,
+  cacheMedicineList,
+  cacheTodaySchedule,
+  syncCriticalDataOnReconnect,
+} from "./offlineStorage";
 
 export type APIEnvelope<T> = {
   ok: boolean;
@@ -26,6 +32,7 @@ export type AuthTokens = {
 
 const ACCESS_KEY = "william_access_token";
 const REFRESH_KEY = "william_refresh_token";
+const OFFLINE_QUEUE_KEY = "william_offline_request_queue";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
@@ -45,6 +52,120 @@ export const clearTokens = () => {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
 };
+
+type OfflineQueuedRequest = {
+  method: string;
+  url: string;
+  baseURL: string;
+  params?: Record<string, unknown>;
+  data?: unknown;
+  headers?: Record<string, string>;
+  queuedAt: number;
+};
+
+const readOfflineQueue = (): OfflineQueuedRequest[] => {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as OfflineQueuedRequest[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeOfflineQueue = (queue: OfflineQueuedRequest[]) => {
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+};
+
+const enqueueOfflineRequest = (config: InternalAxiosRequestConfig) => {
+  const method = (config.method || "get").toUpperCase();
+  const url = config.url || "";
+  if (!url) {
+    return;
+  }
+
+  const queue = readOfflineQueue();
+  queue.push({
+    method,
+    url,
+    baseURL: config.baseURL || baseURL,
+    params: (config.params as Record<string, unknown>) || undefined,
+    data: config.data,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: config.headers?.Authorization as string,
+    },
+    queuedAt: Date.now(),
+  });
+  writeOfflineQueue(queue);
+};
+
+let replayInFlight = false;
+
+const replayOfflineQueue = async () => {
+  if (replayInFlight) {
+    return;
+  }
+
+  const queue = readOfflineQueue();
+  if (queue.length === 0) {
+    return;
+  }
+
+  replayInFlight = true;
+  const pending: OfflineQueuedRequest[] = [];
+
+  for (const item of queue) {
+    try {
+      await axios.request({
+        method: item.method,
+        url: item.url,
+        baseURL: item.baseURL,
+        params: item.params,
+        data: item.data,
+        headers: {
+          ...(item.headers || {}),
+          "x-offline-replay": "true",
+        },
+      });
+    } catch {
+      pending.push(item);
+    }
+  }
+
+  writeOfflineQueue(pending);
+  replayInFlight = false;
+
+  if (navigator.onLine) {
+    try {
+      await syncCriticalDataOnReconnect({
+        fetchScheduleToday: async () => {
+          const response = await apiClient.get<APIEnvelope<unknown>>("/schedule/today");
+          return unwrap(response.data);
+        },
+        fetchHabitsList: async () => {
+          const response = await apiClient.get<APIEnvelope<unknown[]>>("/habits");
+          return unwrap(response.data);
+        },
+        fetchMedicineList: async () => {
+          const response = await apiClient.get<APIEnvelope<unknown[]>>("/medicine");
+          return unwrap(response.data);
+        },
+      });
+    } catch {
+      // Ignore reconnect-sync errors; queue replay will retry next online cycle.
+    }
+  }
+};
+
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    void replayOfflineQueue();
+  });
+}
 
 const apiClient = axios.create({ baseURL });
 
@@ -101,6 +222,26 @@ apiClient.interceptors.response.use(
         return apiClient(original);
       }
     }
+
+    const method = (original?.method || "get").toUpperCase();
+    const isMutation = ["POST", "PATCH", "PUT", "DELETE"].includes(method);
+    const isReplay = original?.headers?.["x-offline-replay"] === "true";
+    if (!error.response && original && isMutation && !isReplay) {
+      enqueueOfflineRequest(original);
+      return Promise.resolve({
+        status: 202,
+        statusText: "Accepted",
+        headers: {},
+        config: original,
+        data: {
+          ok: true,
+          data: { queued: true },
+          error: null,
+          meta: { offline: true },
+        },
+      } as any);
+    }
+
     return Promise.reject(error);
   },
 );
@@ -127,11 +268,25 @@ export const api = {
   },
 
   schedule: {
-    today: () => apiClient.get<APIEnvelope<any>>("/schedule/today").then((r) => unwrap(r.data)),
+    today: () =>
+      apiClient
+        .get<APIEnvelope<any>>("/schedule/today")
+        .then((r) => unwrap(r.data))
+        .then(async (data) => {
+          await cacheTodaySchedule(data);
+          return data;
+        }),
   },
 
   habits: {
-    list: () => apiClient.get<APIEnvelope<any[]>>("/habits").then((r) => unwrap(r.data)),
+    list: () =>
+      apiClient
+        .get<APIEnvelope<any[]>>("/habits")
+        .then((r) => unwrap(r.data))
+        .then(async (data) => {
+          await cacheHabitsList(data);
+          return data;
+        }),
     checkIn: (habitId: string) =>
       apiClient
         .post<APIEnvelope<any>>(`/habits/${habitId}/check-in`, {
@@ -160,7 +315,14 @@ export const api = {
   },
 
   medicine: {
-    list: () => apiClient.get<APIEnvelope<any[]>>("/medicine").then((r) => unwrap(r.data)),
+    list: () =>
+      apiClient
+        .get<APIEnvelope<any[]>>("/medicine")
+        .then((r) => unwrap(r.data))
+        .then(async (data) => {
+          await cacheMedicineList(data);
+          return data;
+        }),
     upcoming: () => apiClient.get<APIEnvelope<any[]>>("/medicine/upcoming").then((r) => unwrap(r.data)),
     adherence: () => apiClient.get<APIEnvelope<any>>("/medicine/adherence").then((r) => unwrap(r.data)),
     log: (medicineId: string, payload: { taken: boolean; skipped: boolean; skip_reason?: string }) =>

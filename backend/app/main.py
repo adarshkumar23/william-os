@@ -18,6 +18,12 @@ from fastapi.responses import ORJSONResponse
 from app.core.config import get_settings
 from app.core.database import close_db, init_db
 from app.core.logging import setup_logging
+from app.core.middleware import RequestTimingMiddleware, SecurityHeadersMiddleware
+from app.core.observability import setup_metrics, setup_sentry
+from app.core.offline import OfflineFallbackMiddleware
+from app.core.rate_limit import RateLimitMiddleware
+from app.core.sync import register_sync_broadcaster
+from app.core.websocket import register_websocket_routes
 from app.modules.audit.service import register_audit_handlers
 from app.shared.types import (
     AuthenticationError,
@@ -40,6 +46,7 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """Startup and shutdown hooks."""
     setup_logging()
+    setup_sentry(settings)
     logger.info("william_os_starting", version=settings.app_version, env=settings.environment)
 
     # Initialize database (dev: auto-create tables)
@@ -48,6 +55,7 @@ async def lifespan(app: FastAPI):
 
     # Register event handlers
     register_audit_handlers()
+    register_sync_broadcaster()
 
     logger.info("william_os_ready")
     yield
@@ -78,6 +86,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(SecurityHeadersMiddleware, is_production=settings.is_production)
+    app.add_middleware(RequestTimingMiddleware)
+    app.add_middleware(OfflineFallbackMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+
+    app.state.degraded_mode = False
+    app.state.degraded_reason = None
 
     # ── Exception Handlers ───────────────────────────────────
     @app.exception_handler(WilliamError)
@@ -122,6 +137,8 @@ def create_app() -> FastAPI:
 
     # ── Routes ───────────────────────────────────────────────
     register_routes(app)
+    register_websocket_routes(app)
+    setup_metrics(app, enabled=settings.metrics_enabled)
 
     # ── Health Check ─────────────────────────────────────────
     @app.get("/health", tags=["System"])
@@ -130,6 +147,8 @@ def create_app() -> FastAPI:
             "status": "ok",
             "version": settings.app_version,
             "environment": settings.environment,
+            "degraded_mode": bool(getattr(app.state, "degraded_mode", False)),
+            "degraded_reason": getattr(app.state, "degraded_reason", None),
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
@@ -141,6 +160,8 @@ def register_routes(app: FastAPI) -> None:
     from app.modules.auth.routes import router as auth_router
     from app.modules.decisions.routes import router as decisions_router
     from app.modules.email_intel.routes import router as email_router
+    from app.modules.experiments.routes import router as experiments_router
+    from app.modules.export.routes import router as export_router
     from app.modules.fitness.routes import router as fitness_router
     from app.modules.habits.routes import router as habits_router
     from app.modules.journal.routes import router as journal_router
@@ -166,6 +187,8 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(trading_router, prefix=prefix)
     app.include_router(sleep_router, prefix=prefix)
     app.include_router(decisions_router, prefix=prefix)
+    app.include_router(experiments_router, prefix=prefix)
+    app.include_router(export_router, prefix=prefix)
     # Future modules added here:
     # app.include_router(audit_router, prefix=prefix)
 

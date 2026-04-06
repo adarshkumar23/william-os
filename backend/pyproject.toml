@@ -26,6 +26,7 @@ dependencies = [
     "pydantic-settings>=2.4.0",
     "structlog>=24.4.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "sentry-sdk[fastapi]>=2.14.0",
     "python-dotenv>=1.0.0",
     "orjson>=3.10.0",
     "croniter>=2.0.0",

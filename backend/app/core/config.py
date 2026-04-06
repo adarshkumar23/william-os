@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     schedule_regen_cron: str = "0 0 * * *"
     prewake_offset_minutes: int = 30
 
+    # ── Observability ───────────────────────────────────────────
+    metrics_enabled: bool = True
+    sentry_dsn: SecretStr = Field(default=SecretStr(""))
+    sentry_traces_sample_rate: float = 0.1
+
+    # ── Experimentation ─────────────────────────────────────────
+    experiment_rollout_seed: str = "william-os"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors(cls, v: str | list[str]) -> list[str]:

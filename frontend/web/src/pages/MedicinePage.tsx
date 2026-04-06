@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import MedicineCard from "../components/MedicineCard";
+import { useRealtimeSync } from "../hooks/useRealtimeSync";
 import { api } from "../services/api";
 
 export default function MedicinePage() {
@@ -8,7 +9,7 @@ export default function MedicinePage() {
   const [upcoming, setUpcoming] = useState<any[]>([]);
   const [adherence, setAdherence] = useState<any | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const [medicineData, upcomingData, adherenceData] = await Promise.all([
       api.medicine.list(),
       api.medicine.upcoming().catch(() => []),
@@ -17,11 +18,17 @@ export default function MedicinePage() {
     setMedicines(medicineData);
     setUpcoming(upcomingData);
     setAdherence(adherenceData);
-  };
+  }, []);
+
+  useRealtimeSync({
+    onMedicineLogged: () => {
+      void load();
+    },
+  });
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   return (
     <div className="space-y-5">
