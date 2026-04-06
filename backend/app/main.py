@@ -6,10 +6,11 @@ FastAPI entry point with lifecycle management, error handling, and middleware.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
@@ -34,6 +35,7 @@ settings = get_settings()
 
 # ── Lifecycle ────────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown hooks."""
@@ -56,6 +58,7 @@ async def lifespan(app: FastAPI):
 
 
 # ── App Factory ──────────────────────────────────────────────────
+
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -101,7 +104,7 @@ def create_app() -> FastAPI:
                 "ok": False,
                 "data": None,
                 "error": "Validation error",
-                "meta": {"details": exc.errors()},
+                "meta": {"details": jsonable_encoder(exc.errors())},
             },
         )
 
@@ -127,7 +130,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "version": settings.app_version,
             "environment": settings.environment,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     return app
@@ -136,15 +139,20 @@ def create_app() -> FastAPI:
 def register_routes(app: FastAPI) -> None:
     """Register all module routers under /api/v1."""
     from app.modules.auth.routes import router as auth_router
+    from app.modules.email_intel.routes import router as email_router
+    from app.modules.habits.routes import router as habits_router
+    from app.modules.journal.routes import router as journal_router
+    from app.modules.medicine.routes import router as medicine_router
     from app.modules.scheduler.routes import router as scheduler_router
 
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=prefix)
     app.include_router(scheduler_router, prefix=prefix)
+    app.include_router(habits_router, prefix=prefix)
+    app.include_router(journal_router, prefix=prefix)
+    app.include_router(medicine_router, prefix=prefix)
+    app.include_router(email_router, prefix=prefix)
     # Future modules added here:
-    # app.include_router(habits_router, prefix=prefix)
-    # app.include_router(journal_router, prefix=prefix)
-    # app.include_router(medicine_router, prefix=prefix)
     # app.include_router(audit_router, prefix=prefix)
 
 

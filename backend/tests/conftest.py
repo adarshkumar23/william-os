@@ -7,20 +7,44 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from app.core.database import Base, get_db
 from app.core.security import hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.compiler import compiles
 
 # Use SQLite for fast unit tests; integration tests use real Postgres
 TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
+
+SCHEMA_TRANSLATE_MAP = {
+    "auth": None,
+    "scheduler": None,
+    "audit": None,
+    "habits": None,
+    "journal": None,
+    "medicine": None,
+    "email_intel": None,
+    "fitness": None,
+    "voice": None,
+    "study": None,
+    "trading": None,
+    "sleep": None,
+    "decisions": None,
+    "messaging": None,
+}
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(_type, _compiler, **_kwargs):
+    """Allow PostgreSQL JSONB columns to be created in SQLite tests."""
+    return "JSON"
 
 
 @pytest.fixture(scope="session")
@@ -32,7 +56,11 @@ def event_loop():
 
 @pytest_asyncio.fixture(scope="function")
 async def db_engine():
-    engine = create_async_engine(TEST_DB_URL, echo=False)
+    engine = create_async_engine(
+        TEST_DB_URL,
+        echo=False,
+        execution_options={"schema_translate_map": SCHEMA_TRANSLATE_MAP},
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine

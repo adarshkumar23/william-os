@@ -6,19 +6,19 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from app.core.config import get_settings
 from app.core.database import Base
+from app.modules.audit.models import AuditLog  # noqa
 
 # Import all models so Alembic sees them
-from app.modules.auth.models import User, Family, UserDevice, RefreshTokenBlacklist  # noqa
-from app.modules.scheduler.models import DailyPlan, ScheduleBlock, RescheduleEvent  # noqa
-from app.modules.audit.models import AuditLog  # noqa
+from app.modules.auth.models import Family, RefreshTokenBlacklist, User, UserDevice  # noqa
+from app.modules.email_intel.models import EmailAccount, EmailSummary  # noqa
 from app.modules.habits.models import Habit, HabitCheckIn, ProcrastinationSignal  # noqa
 from app.modules.journal.models import JournalEntry  # noqa
 from app.modules.medicine.models import Medicine, MedicineLog  # noqa
+from app.modules.scheduler.models import DailyPlan, RescheduleEvent, ScheduleBlock  # noqa
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 settings = get_settings()
