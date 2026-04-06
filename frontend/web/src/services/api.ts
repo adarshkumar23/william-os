@@ -31,26 +31,20 @@ export type AuthTokens = {
 };
 
 const ACCESS_KEY = "william_access_token";
-const REFRESH_KEY = "william_refresh_token";
 const OFFLINE_QUEUE_KEY = "william_offline_request_queue";
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 export const getAccessToken = () => localStorage.getItem(ACCESS_KEY);
-export const getRefreshToken = () => localStorage.getItem(REFRESH_KEY);
 
 export const setTokens = (tokens: Partial<AuthTokens>) => {
   if (tokens.access_token) {
     localStorage.setItem(ACCESS_KEY, tokens.access_token);
   }
-  if (tokens.refresh_token) {
-    localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
-  }
 };
 
 export const clearTokens = () => {
   localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
 };
 
 type OfflineQueuedRequest = {
@@ -124,6 +118,7 @@ const replayOfflineQueue = async () => {
         method: item.method,
         url: item.url,
         baseURL: item.baseURL,
+        withCredentials: true,
         params: item.params,
         data: item.data,
         headers: {
@@ -167,7 +162,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-const apiClient = axios.create({ baseURL });
+const apiClient = axios.create({ baseURL, withCredentials: true });
 
 let refreshInFlight: Promise<string | null> | null = null;
 
@@ -176,13 +171,8 @@ const refreshAccessToken = async (): Promise<string | null> => {
     return refreshInFlight;
   }
 
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    return null;
-  }
-
   refreshInFlight = axios
-    .post<APIEnvelope<AuthTokens>>(`${baseURL}/auth/refresh`, { refresh_token: refreshToken })
+    .post<APIEnvelope<AuthTokens>>(`${baseURL}/auth/refresh`, {}, { withCredentials: true })
     .then((response) => {
       const tokens = response.data.data;
       if (!tokens?.access_token) {
@@ -263,6 +253,8 @@ export const api = {
       device_name: string;
       device_type: string;
     }) => apiClient.post<APIEnvelope<AuthTokens>>("/auth/login", payload).then((r) => unwrap(r.data)),
+
+    logout: () => apiClient.post<APIEnvelope<{ logged_out: boolean }>>("/auth/logout").then((r) => unwrap(r.data)),
 
     me: () => apiClient.get<APIEnvelope<UserProfile>>("/auth/me").then((r) => unwrap(r.data)),
   },

@@ -16,9 +16,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from sqlalchemy import delete, func, select
-from sqlalchemy.inspection import inspect as sa_inspect
-
 from app.core.security import decrypt_text, encrypt_text
 from app.modules.audit.models import AuditAction, AuditLog
 from app.modules.auth.models import User, UserDevice
@@ -35,6 +32,8 @@ from app.modules.study.models import MockTest, RevisionCard, StudySession, Subje
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist
 from app.modules.voice.models import VoiceCommand
 from app.shared.types import EncryptionError, NotFoundError, ValidationError
+from sqlalchemy import delete, func, select
+from sqlalchemy.inspection import inspect as sa_inspect
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -361,18 +360,12 @@ class ExportService:
             .scalar_subquery()
         )
         result = await self.db.execute(
-            select(func.count())
-            .select_from(child_model)
-            .where(child_fk_col.in_(parent_ids))
+            select(func.count()).select_from(child_model).where(child_fk_col.in_(parent_ids))
         )
         return int(result.scalar() or 0)
 
     async def _delete_plan_children(self, child_model, user_id: uuid.UUID) -> None:
-        plan_ids = (
-            select(DailyPlan.id)
-            .where(DailyPlan.user_id == user_id)
-            .scalar_subquery()
-        )
+        plan_ids = select(DailyPlan.id).where(DailyPlan.user_id == user_id).scalar_subquery()
         await self.db.execute(delete(child_model).where(child_model.plan_id.in_(plan_ids)))
 
     async def _delete_parent_children(

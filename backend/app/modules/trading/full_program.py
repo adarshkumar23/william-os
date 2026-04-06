@@ -223,9 +223,7 @@ class TradingCLIClient:
 
         if response.status_code >= 400:
             detail = payload.get("error") or payload
-            raise APIClientError(
-                f"{method} {path} failed ({response.status_code}): {detail}"
-            )
+            raise APIClientError(f"{method} {path} failed ({response.status_code}): {detail}")
         if not payload.get("ok", False):
             raise APIClientError(payload.get("error") or "Unknown API error")
         return payload
@@ -237,9 +235,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--base-url", default=os.getenv("WILLIAM_API_BASE_URL", "http://localhost:8000")
     )
     parser.add_argument("--email", default=os.getenv("WILLIAM_CLI_EMAIL", "trading.cli@william.os"))
-    parser.add_argument(
-        "--username", default=os.getenv("WILLIAM_CLI_USERNAME", "trading_cli_user")
-    )
+    parser.add_argument("--username", default=os.getenv("WILLIAM_CLI_USERNAME", "trading_cli_user"))
     parser.add_argument("--password", default=os.getenv("WILLIAM_CLI_PASSWORD", "StrongPass1"))
 
     sub = parser.add_subparsers(dest="command", required=True)

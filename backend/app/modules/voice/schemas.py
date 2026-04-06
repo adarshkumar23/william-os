@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 class VoiceCommandRequest(BaseModel):
     text: str = Field(min_length=1)
+    journal_passphrase: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class VoiceTranscribeRequest(BaseModel):

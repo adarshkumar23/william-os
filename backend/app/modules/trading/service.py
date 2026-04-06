@@ -36,7 +36,9 @@ class TradingService:
         self.db = db
         self.settings = get_settings()
 
-    async def add_to_watchlist(self, user_id: uuid.UUID, data: WatchlistCreate) -> WatchlistResponse:
+    async def add_to_watchlist(
+        self, user_id: uuid.UUID, data: WatchlistCreate
+    ) -> WatchlistResponse:
         symbol = data.symbol.upper().strip()
         exchange = data.exchange.upper().strip()
         result = await self.db.execute(
@@ -143,7 +145,8 @@ class TradingService:
         )
         previous_snapshot = previous_snapshot_result.scalar_one_or_none()
         daily_pnl = round(
-            current_value - (previous_snapshot.current_value if previous_snapshot else current_value),
+            current_value
+            - (previous_snapshot.current_value if previous_snapshot else current_value),
             4,
         )
 
@@ -214,7 +217,9 @@ class TradingService:
         returns = self._estimate_trade_returns(trades)
         positive = [item for item in returns if item["return_pct"] > 0]
         win_rate = round((len(positive) / len(returns)) * 100, 2) if returns else 0.0
-        avg_return = round(sum(item["return_pct"] for item in returns) / len(returns), 2) if returns else 0.0
+        avg_return = (
+            round(sum(item["return_pct"] for item in returns) / len(returns), 2) if returns else 0.0
+        )
 
         by_symbol: dict[str, int] = defaultdict(int)
         strategy_performance: dict[str, dict] = defaultdict(lambda: {"count": 0, "notional": 0.0})

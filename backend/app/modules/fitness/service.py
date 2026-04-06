@@ -427,8 +427,7 @@ class FitnessService:
         sorted_hours = sorted(hourly_scores.items(), key=lambda item: item[1], reverse=True)
         peak_hours = [hour for hour, _ in sorted_hours[:3]]
         low_hours = [
-            hour
-            for hour, _ in sorted(hourly_scores.items(), key=lambda item: item[1])[:3]
+            hour for hour, _ in sorted(hourly_scores.items(), key=lambda item: item[1])[:3]
         ]
         return {
             "hourly_scores": hourly_scores,

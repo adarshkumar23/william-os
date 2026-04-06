@@ -25,7 +25,11 @@ async def process_text_command(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = VoiceService(db)
-    response = await service.process_voice_command(user_id=user_id, text_or_audio=data.text)
+    response = await service.process_voice_command(
+        user_id=user_id,
+        text_or_audio=data.text,
+        journal_passphrase=data.journal_passphrase,
+    )
     return success(response.model_dump(mode="json"))
 
 

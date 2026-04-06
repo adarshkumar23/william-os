@@ -393,8 +393,12 @@ class StudyService:
         )
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.settings.gemini_model}:generateContent?key={api_key}"
+            f"{self.settings.gemini_model}:generateContent"
         )
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.2},
@@ -402,7 +406,7 @@ class StudyService:
 
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(url, json=payload)
+                response = await client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
 
             raw = response.json()

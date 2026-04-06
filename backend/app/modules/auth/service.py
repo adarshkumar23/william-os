@@ -6,12 +6,9 @@ User registration, login, token management, device tracking.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.events import Event, EventType, event_bus
 from app.core.security import (
     create_access_token,
@@ -29,6 +26,9 @@ from app.modules.auth.schemas import (
     UserRegister,
 )
 from app.shared.types import AuthenticationError, NotFoundError, ValidationError
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -56,17 +56,17 @@ class AuthService:
         await self.db.flush()
 
         logger.info("user_registered", user_id=str(user.id), email=data.email)
-        await event_bus.publish(Event(
-            type=EventType.USER_REGISTERED,
-            data={"email": data.email, "username": data.username},
-            user_id=user.id,
-        ))
+        await event_bus.publish(
+            Event(
+                type=EventType.USER_REGISTERED,
+                data={"email": data.email, "username": data.username},
+                user_id=user.id,
+            )
+        )
 
         return UserProfile.model_validate(user)
 
-    async def login(
-        self, data: UserLogin, user_agent: str = "", ip: str = ""
-    ) -> TokenResponse:
+    async def login(self, data: UserLogin, user_agent: str = "", ip: str = "") -> TokenResponse:
         user = await self._get_user_by_email(data.email)
         if not user or not verify_password(data.password, user.hashed_password):
             if user:
@@ -90,13 +90,16 @@ class AuthService:
         await self.db.flush()
 
         logger.info("user_logged_in", user_id=str(user.id))
-        await event_bus.publish(Event(
-            type=EventType.USER_LOGGED_IN,
-            data={"device": data.device_name, "device_type": data.device_type},
-            user_id=user.id,
-        ))
+        await event_bus.publish(
+            Event(
+                type=EventType.USER_LOGGED_IN,
+                data={"device": data.device_name, "device_type": data.device_type},
+                user_id=user.id,
+            )
+        )
 
         from app.core.config import get_settings
+
         settings = get_settings()
 
         return TokenResponse(
@@ -114,24 +117,13 @@ class AuthService:
         if payload.get("type") != "refresh":
             raise AuthenticationError("Not a refresh token")
 
-        # Check blacklist
         jti = payload.get("jti", "")
-        blacklisted = await self.db.execute(
-            select(RefreshTokenBlacklist).where(RefreshTokenBlacklist.jti == jti)
-        )
-        if blacklisted.scalar_one_or_none():
-            raise AuthenticationError("Token has been revoked")
+        await self._revoke_refresh_token_jti(jti, payload["exp"])
 
         user_id = uuid.UUID(payload["sub"])
         user = await self._get_user_by_id(user_id)
         if not user or not user.is_active:
             raise AuthenticationError("User not found or inactive")
-
-        # Blacklist the old refresh token
-        self.db.add(RefreshTokenBlacklist(
-            jti=jti,
-            expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
-        ))
 
         # Issue new tokens
         access = create_access_token(user.id, {"role": user.role.value})
@@ -139,6 +131,7 @@ class AuthService:
         await self.db.flush()
 
         from app.core.config import get_settings
+
         settings = get_settings()
 
         return TokenResponse(
@@ -146,6 +139,36 @@ class AuthService:
             refresh_token=refresh,
             expires_in=settings.jwt_access_token_expire_minutes * 60,
         )
+
+    async def revoke_refresh_token(self, refresh_token: str) -> None:
+        try:
+            payload = decode_token(refresh_token)
+        except Exception:
+            return
+
+        if payload.get("type") != "refresh":
+            return
+
+        jti = payload.get("jti", "")
+        exp = payload.get("exp")
+        if not jti or not exp:
+            return
+
+        await self._revoke_refresh_token_jti(jti, exp)
+
+    async def _revoke_refresh_token_jti(self, jti: str, exp_timestamp: int) -> None:
+        # Atomic insert prevents refresh-token replay races on concurrent requests.
+        self.db.add(
+            RefreshTokenBlacklist(
+                jti=jti,
+                expires_at=datetime.fromtimestamp(exp_timestamp, tz=UTC),
+            )
+        )
+        try:
+            await self.db.flush()
+        except IntegrityError:
+            await self.db.rollback()
+            raise AuthenticationError("Token has already been used or revoked")
 
     async def get_profile(self, user_id: uuid.UUID) -> UserProfile:
         user = await self._get_user_by_id(user_id)
@@ -174,13 +197,15 @@ class AuthService:
         device = existing.scalar_one_or_none()
 
         if device:
-            device.last_active = datetime.now(timezone.utc)
+            device.last_active = datetime.now(UTC)
             device.device_name = name
         else:
-            self.db.add(UserDevice(
-                user_id=user_id,
-                device_name=name,
-                device_type=device_type,
-                device_fingerprint=fingerprint,
-                last_active=datetime.now(timezone.utc),
-            ))
+            self.db.add(
+                UserDevice(
+                    user_id=user_id,
+                    device_name=name,
+                    device_type=device_type,
+                    device_fingerprint=fingerprint,
+                    last_active=datetime.now(UTC),
+                )
+            )

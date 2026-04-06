@@ -210,9 +210,7 @@ class DecisionsCLIClient:
 
         if response.status_code >= 400:
             detail = payload.get("error") or payload
-            raise APIClientError(
-                f"{method} {path} failed ({response.status_code}): {detail}"
-            )
+            raise APIClientError(f"{method} {path} failed ({response.status_code}): {detail}")
         if not payload.get("ok", False):
             raise APIClientError(payload.get("error") or "Unknown API error")
         return payload

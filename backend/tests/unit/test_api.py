@@ -23,12 +23,15 @@ class TestHealthCheck:
 class TestAuthEndpoints:
     @pytest.mark.asyncio
     async def test_register_success(self, client: AsyncClient):
-        resp = await client.post("/api/v1/auth/register", json={
-            "email": "new@william.os",
-            "username": "newuser",
-            "password": "StrongPass1",
-            "full_name": "New User",
-        })
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "new@william.os",
+                "username": "newuser",
+                "password": "StrongPass1",
+                "full_name": "New User",
+            },
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["ok"] is True
@@ -37,12 +40,15 @@ class TestAuthEndpoints:
 
     @pytest.mark.asyncio
     async def test_register_weak_password_rejected(self, client: AsyncClient):
-        resp = await client.post("/api/v1/auth/register", json={
-            "email": "weak@william.os",
-            "username": "weakuser",
-            "password": "nodigits",
-            "full_name": "Weak User",
-        })
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "weak@william.os",
+                "username": "weakuser",
+                "password": "nodigits",
+                "full_name": "Weak User",
+            },
+        )
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
@@ -63,38 +69,53 @@ class TestAuthEndpoints:
     @pytest.mark.asyncio
     async def test_login_success(self, client: AsyncClient):
         # Register first
-        await client.post("/api/v1/auth/register", json={
-            "email": "login@william.os",
-            "username": "loginuser",
-            "password": "StrongPass1",
-            "full_name": "Login User",
-        })
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "login@william.os",
+                "username": "loginuser",
+                "password": "StrongPass1",
+                "full_name": "Login User",
+            },
+        )
 
-        resp = await client.post("/api/v1/auth/login", json={
-            "email": "login@william.os",
-            "password": "StrongPass1",
-            "device_name": "Test Device",
-            "device_type": "web",
-        })
+        resp = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "login@william.os",
+                "password": "StrongPass1",
+                "device_name": "Test Device",
+                "device_type": "web",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
         assert "access_token" in data["data"]
         assert "refresh_token" in data["data"]
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "william_refresh_token=" in set_cookie
+        assert "HttpOnly" in set_cookie
 
     @pytest.mark.asyncio
     async def test_login_wrong_password(self, client: AsyncClient):
-        await client.post("/api/v1/auth/register", json={
-            "email": "badlogin@william.os",
-            "username": "badloginuser",
-            "password": "StrongPass1",
-            "full_name": "Bad Login",
-        })
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "badlogin@william.os",
+                "username": "badloginuser",
+                "password": "StrongPass1",
+                "full_name": "Bad Login",
+            },
+        )
 
-        resp = await client.post("/api/v1/auth/login", json={
-            "email": "badlogin@william.os",
-            "password": "WrongPass1",
-        })
+        resp = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "badlogin@william.os",
+                "password": "WrongPass1",
+            },
+        )
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
@@ -105,16 +126,22 @@ class TestAuthEndpoints:
     @pytest.mark.asyncio
     async def test_get_me_with_token(self, client: AsyncClient):
         # Register + Login
-        await client.post("/api/v1/auth/register", json={
-            "email": "me@william.os",
-            "username": "meuser",
-            "password": "StrongPass1",
-            "full_name": "Me User",
-        })
-        login_resp = await client.post("/api/v1/auth/login", json={
-            "email": "me@william.os",
-            "password": "StrongPass1",
-        })
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "me@william.os",
+                "username": "meuser",
+                "password": "StrongPass1",
+                "full_name": "Me User",
+            },
+        )
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "me@william.os",
+                "password": "StrongPass1",
+            },
+        )
         token = login_resp.json()["data"]["access_token"]
 
         resp = await client.get(
@@ -127,24 +154,92 @@ class TestAuthEndpoints:
 
     @pytest.mark.asyncio
     async def test_token_refresh(self, client: AsyncClient):
-        await client.post("/api/v1/auth/register", json={
-            "email": "refresh@william.os",
-            "username": "refreshuser",
-            "password": "StrongPass1",
-            "full_name": "Refresh User",
-        })
-        login_resp = await client.post("/api/v1/auth/login", json={
-            "email": "refresh@william.os",
-            "password": "StrongPass1",
-        })
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "refresh@william.os",
+                "username": "refreshuser",
+                "password": "StrongPass1",
+                "full_name": "Refresh User",
+            },
+        )
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "refresh@william.os",
+                "password": "StrongPass1",
+            },
+        )
         refresh_token = login_resp.json()["data"]["refresh_token"]
 
-        resp = await client.post("/api/v1/auth/refresh", json={
-            "refresh_token": refresh_token,
-        })
+        resp = await client.post(
+            "/api/v1/auth/refresh",
+            json={
+                "refresh_token": refresh_token,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
         assert "access_token" in data["data"]
         # New tokens should be different
         assert data["data"]["refresh_token"] != refresh_token
+
+    @pytest.mark.asyncio
+    async def test_token_refresh_works_with_cookie_only(self, client: AsyncClient):
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "refresh-cookie@william.os",
+                "username": "refreshcookieuser",
+                "password": "StrongPass1",
+                "full_name": "Refresh Cookie User",
+            },
+        )
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "refresh-cookie@william.os",
+                "password": "StrongPass1",
+            },
+        )
+        old_refresh = login_resp.json()["data"]["refresh_token"]
+
+        resp = await client.post("/api/v1/auth/refresh")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["data"]["refresh_token"] != old_refresh
+
+    @pytest.mark.asyncio
+    async def test_logout_revokes_refresh_token(self, client: AsyncClient):
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "logout@william.os",
+                "username": "logoutuser",
+                "password": "StrongPass1",
+                "full_name": "Logout User",
+            },
+        )
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "logout@william.os",
+                "password": "StrongPass1",
+            },
+        )
+        old_refresh = login_resp.json()["data"]["refresh_token"]
+
+        logout_resp = await client.post("/api/v1/auth/logout")
+        assert logout_resp.status_code == 200
+        logout_cookie = logout_resp.headers.get("set-cookie", "")
+        assert "william_refresh_token=" in logout_cookie
+
+        refresh_resp = await client.post(
+            "/api/v1/auth/refresh",
+            json={
+                "refresh_token": old_refresh,
+            },
+        )
+        assert refresh_resp.status_code == 401

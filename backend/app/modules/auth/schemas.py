@@ -43,7 +43,7 @@ class TokenResponse(BaseModel):
 
 
 class TokenRefresh(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class UserProfile(BaseModel):

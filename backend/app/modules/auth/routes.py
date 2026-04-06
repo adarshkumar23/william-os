@@ -8,24 +8,44 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, Header, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.modules.auth.schemas import (
     TokenRefresh,
-    TokenResponse,
     UserLogin,
-    UserProfile,
     UserRegister,
 )
 from app.modules.auth.service import AuthService
 from app.shared.types import success
+from fastapi import APIRouter, Depends, Header, Request, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+REFRESH_COOKIE_NAME = "william_refresh_token"
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    settings = get_settings()
+    max_age_seconds = settings.jwt_refresh_token_expire_days * 24 * 60 * 60
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=settings.is_production,
+        samesite="lax",
+        max_age=max_age_seconds,
+        path="/api/v1/auth",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path="/api/v1/auth",
+    )
 
 
 async def get_current_user_id(
@@ -34,11 +54,13 @@ async def get_current_user_id(
     """Extract and validate user ID from JWT."""
     if not authorization.startswith("Bearer "):
         from app.shared.types import AuthenticationError
+
         raise AuthenticationError("Invalid authorization header")
     token = authorization[7:]
     payload = decode_token(token)
     if payload.get("type") != "access":
         from app.shared.types import AuthenticationError
+
         raise AuthenticationError("Invalid token type")
     return uuid.UUID(payload["sub"])
 
@@ -54,20 +76,50 @@ async def register(data: UserRegister, db: AsyncSession = Depends(get_db)) -> di
 async def login(
     data: UserLogin,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = AuthService(db)
     user_agent = request.headers.get("user-agent", "")
     ip = request.client.host if request.client else ""
     tokens = await service.login(data, user_agent, ip)
+    _set_refresh_cookie(response, tokens.refresh_token)
     return success(tokens.model_dump())
 
 
 @router.post("/refresh")
-async def refresh(data: TokenRefresh, db: AsyncSession = Depends(get_db)) -> dict:
+async def refresh(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    data: TokenRefresh | None = None,
+) -> dict:
     service = AuthService(db)
-    tokens = await service.refresh_tokens(data.refresh_token)
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME) or (
+        data.refresh_token if data else None
+    )
+    if not refresh_token:
+        from app.shared.types import AuthenticationError
+
+        raise AuthenticationError("Refresh token is required")
+
+    tokens = await service.refresh_tokens(refresh_token)
+    _set_refresh_cookie(response, tokens.refresh_token)
     return success(tokens.model_dump())
+
+
+@router.post("/logout")
+async def logout(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if refresh_token:
+        await service.revoke_refresh_token(refresh_token)
+    _clear_refresh_cookie(response)
+    return success({"logged_out": True})
 
 
 @router.get("/me")

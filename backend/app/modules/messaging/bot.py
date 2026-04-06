@@ -77,7 +77,7 @@ class TelegramBotHandler:
                 "Available commands:\n"
                 "/today\n"
                 "/checkin {habit_name}\n"
-                "/journal {text}\n"
+                "/journal {passphrase}|{text}\n"
                 "/help",
             )
             return
@@ -119,9 +119,7 @@ class TelegramBotHandler:
         blocks = data.get("blocks") or []
         lines = [f"Today's schedule ({data.get('plan_date', date.today().isoformat())})"]
         for block in blocks[:8]:
-            lines.append(
-                f"- {block.get('start_time', '--')} {block.get('title', 'Untitled')}"
-            )
+            lines.append(f"- {block.get('start_time', '--')} {block.get('title', 'Untitled')}")
 
         if not blocks:
             lines.append("No blocks scheduled yet.")
@@ -172,17 +170,21 @@ class TelegramBotHandler:
     ) -> None:
         cleaned = content.strip()
         if not cleaned:
-            await self._send_telegram_message(chat_id, "Usage: /journal {text}")
+            await self._send_telegram_message(chat_id, "Usage: /journal {passphrase}|{text}")
             return
 
-        passphrase = await self._default_journal_passphrase(user_id, db)
-        if passphrase is None:
+        if "|" not in cleaned:
             await self._send_telegram_message(
                 chat_id,
-                (
-                    "No default journal passphrase found. "
-                    "Set preferences.journal_default_passphrase in your profile settings."
-                ),
+                "Usage: /journal {passphrase}|{text}",
+            )
+            return
+
+        passphrase, journal_text = (part.strip() for part in cleaned.split("|", maxsplit=1))
+        if len(passphrase) < 8 or not journal_text:
+            await self._send_telegram_message(
+                chat_id,
+                "Passphrase must be at least 8 chars. Usage: /journal {passphrase}|{text}",
             )
             return
 
@@ -190,7 +192,7 @@ class TelegramBotHandler:
         entry = await service.create_entry(
             user_id=user_id,
             data=JournalCreate(
-                content=cleaned,
+                content=journal_text,
                 passphrase=passphrase,
                 tags=["telegram"],
             ),
@@ -252,23 +254,6 @@ class TelegramBotHandler:
         if link is None:
             return None
         return link.user_id
-
-    async def _default_journal_passphrase(
-        self,
-        user_id: uuid.UUID,
-        db: AsyncSession,
-    ) -> str | None:
-        from app.modules.auth.models import User
-
-        user = await db.get(User, user_id)
-        if user is None:
-            return None
-
-        preferences = user.preferences or {}
-        passphrase = preferences.get("journal_default_passphrase")
-        if isinstance(passphrase, str) and passphrase.strip():
-            return passphrase.strip()
-        return None
 
 
 telegram_bot_handler = TelegramBotHandler()

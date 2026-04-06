@@ -57,10 +57,12 @@ def test_websocket_broadcasts_to_other_devices_only() -> None:
         client.websocket_connect(f"/ws/v1/sync?token={token}") as ws_sender,
         client.websocket_connect(f"/ws/v1/sync?token={token}") as ws_receiver,
     ):
-        ws_sender.send_json({
-            "type": "habit_checked_in",
-            "data": {"habit_id": "abc123"},
-        })
+        ws_sender.send_json(
+            {
+                "type": "habit_checked_in",
+                "data": {"habit_id": "abc123"},
+            }
+        )
         message = ws_receiver.receive_json()
 
     assert message["type"] == "habit_checked_in"

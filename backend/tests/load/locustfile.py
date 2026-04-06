@@ -25,19 +25,25 @@ class WilliamUser(HttpUser):
         email = f"loadtest{uid}@william.os"
         password = "LoadTest1!"
 
-        self.client.post("/api/v1/auth/register", json={
-            "email": email,
-            "username": f"load{uid}",
-            "password": password,
-            "full_name": f"Load User {uid}",
-        })
+        self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": email,
+                "username": f"load{uid}",
+                "password": password,
+                "full_name": f"Load User {uid}",
+            },
+        )
 
-        resp = self.client.post("/api/v1/auth/login", json={
-            "email": email,
-            "password": password,
-            "device_name": "Locust",
-            "device_type": "web",
-        })
+        resp = self.client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": email,
+                "password": password,
+                "device_name": "Locust",
+                "device_type": "web",
+            },
+        )
         if resp.status_code == 200:
             self.access_token = resp.json()["data"]["access_token"]
 

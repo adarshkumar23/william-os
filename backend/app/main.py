@@ -113,13 +113,17 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
+        details = jsonable_encoder(
+            exc.errors(),
+            custom_encoder={ValueError: lambda value: str(value)},
+        )
         return ORJSONResponse(
             status_code=422,
             content={
                 "ok": False,
                 "data": None,
                 "error": "Validation error",
-                "meta": {"details": jsonable_encoder(exc.errors())},
+                "meta": {"details": details},
             },
         )
 

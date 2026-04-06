@@ -12,18 +12,23 @@ from app.modules.audit.models import AuditLog  # noqa
 
 # Import all models so Alembic sees them
 from app.modules.auth.models import Family, RefreshTokenBlacklist, User, UserDevice  # noqa
+from app.modules.decisions.models import Decision, DecisionTemplate  # noqa
 from app.modules.email_intel.models import EmailAccount, EmailSummary  # noqa
-from app.modules.fitness.models import EnergyForecast, FitnessDevice, HealthMetric, WorkoutLog  # noqa
+from app.modules.fitness.models import (  # noqa
+    EnergyForecast,
+    FitnessDevice,
+    HealthMetric,
+    WorkoutLog,
+)
 from app.modules.habits.models import Habit, HabitCheckIn, ProcrastinationSignal  # noqa
 from app.modules.journal.models import JournalEntry  # noqa
-from app.modules.messaging.models import NotificationLog, TelegramUser  # noqa
 from app.modules.medicine.models import Medicine, MedicineLog  # noqa
-from app.modules.sleep.models import SleepDebt, SleepRecommendation, SleepRecord  # noqa
+from app.modules.messaging.models import NotificationLog, TelegramUser  # noqa
 from app.modules.scheduler.models import DailyPlan, RescheduleEvent, ScheduleBlock  # noqa
+from app.modules.sleep.models import SleepDebt, SleepRecommendation, SleepRecord  # noqa
 from app.modules.study.models import MockTest, RevisionCard, StudySession, Subject  # noqa
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist  # noqa
 from app.modules.voice.models import VoiceCommand  # noqa
-from app.modules.decisions.models import Decision, DecisionTemplate  # noqa
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 

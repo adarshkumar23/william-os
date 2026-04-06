@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 async def test_log_sleep_calculates_duration(db_session: AsyncSession, test_user):
     service = SleepService(db_session)
 
-    bedtime = datetime.now(UTC).replace(hour=22, minute=30, second=0, microsecond=0) - timedelta(days=1)
+    bedtime = datetime.now(UTC).replace(hour=22, minute=30, second=0, microsecond=0) - timedelta(
+        days=1
+    )
     wake_time = bedtime + timedelta(hours=7, minutes=15)
 
     record = await service.log_sleep(
@@ -40,7 +42,9 @@ async def test_sleep_debt_calculation(db_session: AsyncSession, test_user):
 
     for i in range(7):
         sleep_date = date.today() - timedelta(days=i)
-        bedtime = datetime.now(UTC).replace(hour=23, minute=0, second=0, microsecond=0) - timedelta(days=i + 1)
+        bedtime = datetime.now(UTC).replace(hour=23, minute=0, second=0, microsecond=0) - timedelta(
+            days=i + 1
+        )
         wake_time = bedtime + timedelta(hours=6)
         await service.log_sleep(
             user_id=test_user.id,
@@ -63,7 +67,9 @@ async def test_sleep_debt_calculation(db_session: AsyncSession, test_user):
 async def test_sleep_stats(db_session: AsyncSession, test_user):
     service = SleepService(db_session)
 
-    bedtime = datetime.now(UTC).replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=1)
+    bedtime = datetime.now(UTC).replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(
+        days=1
+    )
     wake_time = bedtime + timedelta(hours=8)
 
     await service.log_sleep(

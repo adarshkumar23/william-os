@@ -5,7 +5,8 @@ Pydantic models for Study Mentor API contracts.
 
 from __future__ import annotations
 
-from datetime import date as DateType, datetime
+from datetime import date as DateType
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator

@@ -6,10 +6,9 @@ All settings from environment with validated defaults.
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,15 +34,20 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_ttl: int = 300
+    offline_queue_path: str = "./data/offline_queue.jsonl"
 
     # ── Auth ─────────────────────────────────────────────────────
-    jwt_secret_key: SecretStr = Field(default=SecretStr("CHANGE-ME-IN-PRODUCTION"))
+    jwt_secret_key: SecretStr = Field(
+        default=SecretStr("dev-insecure-jwt-secret-for-local-development-only-1234567890")
+    )
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 7
 
     # ── Encryption ───────────────────────────────────────────────
-    encryption_master_salt: SecretStr = Field(default=SecretStr("CHANGE-ME"))
+    encryption_master_salt: SecretStr = Field(
+        default=SecretStr("dev-insecure-encryption-salt-for-local-development-only-1234567890")
+    )
     encryption_iterations: int = 600_000
 
     # ── AI ────────────────────────────────────────────────────────
@@ -81,6 +85,42 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [s.strip() for s in v.split(",")]
         return v
+
+    @field_validator("encryption_iterations")
+    @classmethod
+    def validate_encryption_iterations(cls, value: int) -> int:
+        if value < 300_000:
+            raise ValueError("ENCRYPTION_ITERATIONS must be >= 300000")
+        return value
+
+    @model_validator(mode="after")
+    def validate_security_secrets(self) -> Settings:
+        blocked_secret_values = {
+            "",
+            "CHANGE-ME",
+            "CHANGE-ME-IN-PRODUCTION",
+            "your-super-secret-jwt-key-change-me",
+            "your-super-secret-salt-change-me",
+            "dev-insecure-jwt-secret-for-local-development-only-1234567890",
+            "dev-insecure-encryption-salt-for-local-development-only-1234567890",
+        }
+
+        jwt_secret = self.jwt_secret_key.get_secret_value().strip()
+        master_salt = self.encryption_master_salt.get_secret_value().strip()
+
+        if self.is_production:
+            if jwt_secret in blocked_secret_values or len(jwt_secret) < 32:
+                raise ValueError(
+                    "JWT_SECRET_KEY is not secure for production. "
+                    "Use a unique value with at least 32 characters."
+                )
+            if master_salt in blocked_secret_values or len(master_salt) < 16:
+                raise ValueError(
+                    "ENCRYPTION_MASTER_SALT is not secure for production. "
+                    "Use a unique value with at least 16 characters."
+                )
+
+        return self
 
     @property
     def is_production(self) -> bool:

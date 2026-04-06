@@ -47,14 +47,32 @@ async def test_execute_intent_check_in_route(db_session: AsyncSession, test_user
 
 
 @pytest.mark.asyncio
+async def test_execute_intent_journal_requires_passphrase(db_session: AsyncSession, test_user):
+    service = VoiceService(db_session)
+
+    response = await service.execute_intent(
+        user_id=test_user.id,
+        intent="journal",
+        params={"content": "A private note."},
+    )
+
+    assert "passphrase is required" in response.lower()
+
+
+@pytest.mark.asyncio
 async def test_process_voice_command_logs_command(db_session: AsyncSession, test_user, monkeypatch):
     service = VoiceService(db_session)
 
     async def _fake_parse_intent(_text: str):
         return "query", 0.95, {"query_type": "today_schedule"}
 
-    async def _fake_execute_intent(user_id, intent: str, params: dict):
-        _ = (user_id, intent, params)
+    async def _fake_execute_intent(
+        user_id,
+        intent: str,
+        params: dict,
+        journal_passphrase: str | None = None,
+    ):
+        _ = (user_id, intent, params, journal_passphrase)
         return "Today has 0 blocks."
 
     monkeypatch.setattr(service, "parse_intent", _fake_parse_intent)

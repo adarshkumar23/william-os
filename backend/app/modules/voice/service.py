@@ -71,10 +71,13 @@ class VoiceService:
         if not api_key:
             return self._fallback_parse_intent(text)
 
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.settings.gemini_model}:generateContent?key={api_key}"
+            f"{self.settings.gemini_model}:generateContent"
         )
         payload = {
             "contents": [{"parts": [{"text": INTENT_PROMPT.format(command=text)}]}],
@@ -105,7 +108,13 @@ class VoiceService:
             logger.warning("voice_intent_parse_failed", error=str(exc))
             return self._fallback_parse_intent(text)
 
-    async def execute_intent(self, user_id: uuid.UUID, intent: str, params: dict) -> str:
+    async def execute_intent(
+        self,
+        user_id: uuid.UUID,
+        intent: str,
+        params: dict,
+        journal_passphrase: str | None = None,
+    ) -> str:
         if intent == "reschedule":
             reason = str(params.get("reason") or "Voice reschedule request")
             service = SchedulerService(self.db)
@@ -150,11 +159,14 @@ class VoiceService:
             if not content:
                 return "Please provide journal text after the command."
 
-            passphrase = await self._default_journal_passphrase(user_id)
+            supplied = params.get("passphrase")
+            passphrase = supplied.strip() if isinstance(supplied, str) else None
+            if not passphrase and journal_passphrase:
+                passphrase = journal_passphrase.strip()
             if not passphrase:
                 return (
-                    "No default journal passphrase set in "
-                    "preferences.journal_default_passphrase."
+                    "Journal passphrase is required for voice journal commands. "
+                    "Send journal_passphrase in the request body."
                 )
 
             service = JournalService(self.db)
@@ -227,6 +239,7 @@ class VoiceService:
         self,
         user_id: uuid.UUID,
         text_or_audio: str | bytes,
+        journal_passphrase: str | None = None,
     ) -> VoiceCommandResponse:
         started = time.monotonic()
 
@@ -257,7 +270,12 @@ class VoiceService:
                 if medicine_name:
                     params["medicine_name"] = medicine_name
 
-        response_text = await self.execute_intent(user_id=user_id, intent=intent, params=params)
+        response_text = await self.execute_intent(
+            user_id=user_id,
+            intent=intent,
+            params=params,
+            journal_passphrase=journal_passphrase,
+        )
         processing_ms = int((time.monotonic() - started) * 1000)
 
         command = VoiceCommand(
@@ -304,19 +322,6 @@ class VoiceService:
         commands = result.scalars().all()
         return [VoiceCommandLogResponse.model_validate(item) for item in commands]
 
-    async def _default_journal_passphrase(self, user_id: uuid.UUID) -> str | None:
-        from app.modules.auth.models import User
-
-        user = await self.db.get(User, user_id)
-        if user is None:
-            return None
-
-        preferences = user.preferences or {}
-        passphrase = preferences.get("journal_default_passphrase")
-        if isinstance(passphrase, str) and passphrase.strip():
-            return passphrase.strip()
-        return None
-
     @staticmethod
     def _extract_json(text: str) -> dict | None:
         candidate = text.strip()
@@ -352,9 +357,11 @@ class VoiceService:
             habit_name = lowered.replace("check in", "").replace("checkin", "").strip(" :,-")
             return "check_in", 0.7, {"habit_name": habit_name}
         if lowered.startswith("journal") or "journal" in lowered:
-            return "journal", 0.75, {
-                "content": VoiceService._extract_after_keyword(text, "journal")
-            }
+            return (
+                "journal",
+                0.75,
+                {"content": VoiceService._extract_after_keyword(text, "journal")},
+            )
         if "medicine" in lowered or "tablet" in lowered or "pill" in lowered:
             medicine_name = VoiceService._extract_after_keyword(text, "medicine")
             return "medicine", 0.65, {"medicine_name": medicine_name}

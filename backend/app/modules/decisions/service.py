@@ -43,9 +43,7 @@ class DecisionService:
 
     async def list_decisions(self, user_id: uuid.UUID) -> list[DecisionResponse]:
         result = await self.db.execute(
-            select(Decision)
-            .where(Decision.user_id == user_id)
-            .order_by(Decision.created_at.desc())
+            select(Decision).where(Decision.user_id == user_id).order_by(Decision.created_at.desc())
         )
         return [DecisionResponse.model_validate(row) for row in result.scalars().all()]
 
@@ -106,7 +104,9 @@ class DecisionService:
         decision.chosen_at = datetime.now(UTC)
         decision.status = "decided"
         if payload.reasoning:
-            decision.ai_analysis = (decision.ai_analysis or "") + f"\nUser note: {payload.reasoning}"
+            decision.ai_analysis = (
+                decision.ai_analysis or ""
+            ) + f"\nUser note: {payload.reasoning}"
         await self.db.flush()
         await self.db.refresh(decision)
         return DecisionResponse.model_validate(decision)
@@ -156,7 +156,11 @@ class DecisionService:
                     agreement_checks.append(1.0 if top == item.chosen_option else 0.0)
 
         avg_time = round(sum(decided_deltas) / len(decided_deltas), 2) if decided_deltas else 0.0
-        ai_agreement = round((sum(agreement_checks) / len(agreement_checks)) * 100, 2) if agreement_checks else 0.0
+        ai_agreement = (
+            round((sum(agreement_checks) / len(agreement_checks)) * 100, 2)
+            if agreement_checks
+            else 0.0
+        )
         avg_rating = round(sum(ratings) / len(ratings), 2) if ratings else 0.0
 
         return DecisionStats(
@@ -212,9 +216,7 @@ class DecisionService:
 
     async def _get_user_decision(self, user_id: uuid.UUID, decision_id: uuid.UUID) -> Decision:
         result = await self.db.execute(
-            select(Decision).where(
-                and_(Decision.id == decision_id, Decision.user_id == user_id)
-            )
+            select(Decision).where(and_(Decision.id == decision_id, Decision.user_id == user_id))
         )
         decision = result.scalar_one_or_none()
         if decision is None:
@@ -282,11 +284,18 @@ class DecisionService:
                 risk_factors=["No options supplied"],
             )
 
-        option_names = [str(item.get("name") or f"option_{idx + 1}") for idx, item in enumerate(options)]
+        option_names = [
+            str(item.get("name") or f"option_{idx + 1}") for idx, item in enumerate(options)
+        ]
         criteria_weights = sum(float(item.get("weight", 0.0)) for item in criteria) or 1.0
 
         scores = {
-            name: round(0.5 + (idx / max(1, len(option_names) - 1)) * (criteria_weights / max(1.0, len(criteria))), 3)
+            name: round(
+                0.5
+                + (idx / max(1, len(option_names) - 1))
+                * (criteria_weights / max(1.0, len(criteria))),
+                3,
+            )
             for idx, name in enumerate(option_names)
         }
         recommendation = max(scores.items(), key=lambda x: x[1])[0]

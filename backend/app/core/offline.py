@@ -26,7 +26,12 @@ class ReplayQueue:
     """Append-only JSONL queue for deferred mutation requests."""
 
     def __init__(self, queue_path: Path | None = None) -> None:
-        self.queue_path = queue_path or Path("/app/data/offline_queue.jsonl")
+        if queue_path is not None:
+            self.queue_path = queue_path
+            return
+
+        settings = get_settings()
+        self.queue_path = Path(settings.offline_queue_path).expanduser()
 
     async def enqueue(self, item: dict) -> bool:
         try:

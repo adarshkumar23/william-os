@@ -9,13 +9,10 @@ import hashlib
 import json
 import time as time_module
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 import httpx
 import structlog
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.scheduler.models import (
@@ -33,7 +30,9 @@ from app.modules.scheduler.schemas import (
     RescheduleRequest,
     ScheduleGenerateRequest,
 )
-from app.shared.types import NotFoundError, ValidationError, WilliamError
+from app.shared.types import NotFoundError, ValidationError
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -170,11 +169,13 @@ class SchedulerService:
             latency_ms=latency_ms,
         )
 
-        await event_bus.publish(Event(
-            type=EventType.SCHEDULE_GENERATED,
-            data={"date": str(request.target_date), "block_count": len(ai_blocks)},
-            user_id=user_id,
-        ))
+        await event_bus.publish(
+            Event(
+                type=EventType.SCHEDULE_GENERATED,
+                data={"date": str(request.target_date), "block_count": len(ai_blocks)},
+                user_id=user_id,
+            )
+        )
 
         return await self.get_plan(user_id, request.target_date)
 
@@ -225,7 +226,7 @@ class SchedulerService:
     async def update_block(
         self, user_id: uuid.UUID, block_id: uuid.UUID, data: BlockUpdate
     ) -> DailyPlanResponse:
-        block = await self._get_block(block_id)
+        block = await self._get_block_for_user(user_id, block_id)
         if not block:
             raise NotFoundError("ScheduleBlock", str(block_id))
 
@@ -241,23 +242,25 @@ class SchedulerService:
             block.duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
 
         if data.status == BlockStatus.COMPLETED:
-            block.actual_end = datetime.now(timezone.utc)
-            await event_bus.publish(Event(
-                type=EventType.SCHEDULE_ITEM_COMPLETED,
-                data={"block_id": str(block_id), "title": block.title},
-                user_id=user_id,
-            ))
+            block.actual_end = datetime.now(UTC)
+            await event_bus.publish(
+                Event(
+                    type=EventType.SCHEDULE_ITEM_COMPLETED,
+                    data={"block_id": str(block_id), "title": block.title},
+                    user_id=user_id,
+                )
+            )
 
         await self.db.flush()
         plan = await self.db.get(DailyPlan, block.plan_id)
         return DailyPlanResponse.model_validate(plan)
 
     async def start_block(self, user_id: uuid.UUID, block_id: uuid.UUID) -> DailyPlanResponse:
-        block = await self._get_block(block_id)
+        block = await self._get_block_for_user(user_id, block_id)
         if not block:
             raise NotFoundError("ScheduleBlock", str(block_id))
         block.status = BlockStatus.IN_PROGRESS
-        block.actual_start = datetime.now(timezone.utc)
+        block.actual_start = datetime.now(UTC)
         await self.db.flush()
         plan = await self.db.get(DailyPlan, block.plan_id)
         return DailyPlanResponse.model_validate(plan)
@@ -273,7 +276,12 @@ class SchedulerService:
 
         old_schedule = {
             "blocks": [
-                {"id": str(b.id), "title": b.title, "start": str(b.start_time), "end": str(b.end_time)}
+                {
+                    "id": str(b.id),
+                    "title": b.title,
+                    "start": str(b.start_time),
+                    "end": str(b.end_time),
+                }
                 for b in plan.blocks
             ]
         }
@@ -293,22 +301,26 @@ class SchedulerService:
             self.db.add(new_block)
 
         # Log reschedule event
-        self.db.add(RescheduleEvent(
-            plan_id=plan.id,
-            trigger=request.trigger,
-            reason=request.reason,
-            old_schedule=old_schedule,
-            new_schedule={"blocks": new_blocks},
-            ai_model_used=self.settings.gemini_model,
-        ))
+        self.db.add(
+            RescheduleEvent(
+                plan_id=plan.id,
+                trigger=request.trigger,
+                reason=request.reason,
+                old_schedule=old_schedule,
+                new_schedule={"blocks": new_blocks},
+                ai_model_used=self.settings.gemini_model,
+            )
+        )
 
         await self.db.flush()
 
-        await event_bus.publish(Event(
-            type=EventType.SCHEDULE_RESCHEDULED,
-            data={"date": str(plan_date), "reason": request.reason},
-            user_id=user_id,
-        ))
+        await event_bus.publish(
+            Event(
+                type=EventType.SCHEDULE_RESCHEDULED,
+                data={"date": str(plan_date), "reason": request.reason},
+                user_id=user_id,
+            )
+        )
 
         return await self.get_plan(user_id, plan_date)
 
@@ -426,8 +438,24 @@ class SchedulerService:
         return result.scalar_one_or_none()
 
     async def _get_block(self, block_id: uuid.UUID) -> ScheduleBlock | None:
+        result = await self.db.execute(select(ScheduleBlock).where(ScheduleBlock.id == block_id))
+        return result.scalar_one_or_none()
+
+    async def _get_block_for_user(
+        self,
+        user_id: uuid.UUID,
+        block_id: uuid.UUID,
+    ) -> ScheduleBlock | None:
         result = await self.db.execute(
-            select(ScheduleBlock).where(ScheduleBlock.id == block_id)
+            select(ScheduleBlock)
+            .join(DailyPlan, DailyPlan.id == ScheduleBlock.plan_id)
+            .where(
+                and_(
+                    ScheduleBlock.id == block_id,
+                    DailyPlan.user_id == user_id,
+                    DailyPlan.status != PlanStatus.ARCHIVED,
+                )
+            )
         )
         return result.scalar_one_or_none()
 
@@ -495,8 +523,12 @@ Optimize remaining time. Respond with ONLY a JSON array of the NEW blocks
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.settings.gemini_model}:generateContent?key={api_key}"
+            f"{self.settings.gemini_model}:generateContent"
         )
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -510,7 +542,7 @@ Optimize remaining time. Respond with ONLY a JSON array of the NEW blocks
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -529,18 +561,102 @@ Optimize remaining time. Respond with ONLY a JSON array of the NEW blocks
     def _fallback_schedule(self) -> list[dict]:
         """Rule-based fallback when AI is unavailable."""
         return [
-            {"title": "Morning Routine", "category": "routine", "start_time": "06:00", "end_time": "06:45", "priority": 2, "tags": ["morning"]},
-            {"title": "Breakfast", "category": "meal", "start_time": "06:45", "end_time": "07:15", "priority": 3, "tags": ["meal"]},
-            {"title": "Deep Work Block 1", "category": "work", "start_time": "07:30", "end_time": "09:30", "priority": 1, "tags": ["focus"]},
-            {"title": "Break", "category": "break", "start_time": "09:30", "end_time": "09:45", "priority": 5, "tags": []},
-            {"title": "Deep Work Block 2", "category": "work", "start_time": "09:45", "end_time": "11:45", "priority": 1, "tags": ["focus"]},
-            {"title": "Lunch", "category": "meal", "start_time": "12:00", "end_time": "12:45", "priority": 3, "tags": ["meal"]},
-            {"title": "Study / Learning", "category": "study", "start_time": "13:00", "end_time": "14:30", "priority": 2, "tags": ["study"]},
-            {"title": "Exercise", "category": "fitness", "start_time": "15:00", "end_time": "16:00", "priority": 2, "tags": ["health"]},
-            {"title": "Buffer / Personal", "category": "buffer", "start_time": "16:15", "end_time": "17:00", "priority": 7, "tags": []},
-            {"title": "Dinner", "category": "meal", "start_time": "19:00", "end_time": "19:45", "priority": 3, "tags": ["meal"]},
-            {"title": "Evening Wind-Down", "category": "routine", "start_time": "21:30", "end_time": "22:00", "priority": 4, "tags": ["evening"]},
-            {"title": "Sleep", "category": "sleep", "start_time": "22:30", "end_time": "06:00", "priority": 1, "tags": ["sleep"]},
+            {
+                "title": "Morning Routine",
+                "category": "routine",
+                "start_time": "06:00",
+                "end_time": "06:45",
+                "priority": 2,
+                "tags": ["morning"],
+            },
+            {
+                "title": "Breakfast",
+                "category": "meal",
+                "start_time": "06:45",
+                "end_time": "07:15",
+                "priority": 3,
+                "tags": ["meal"],
+            },
+            {
+                "title": "Deep Work Block 1",
+                "category": "work",
+                "start_time": "07:30",
+                "end_time": "09:30",
+                "priority": 1,
+                "tags": ["focus"],
+            },
+            {
+                "title": "Break",
+                "category": "break",
+                "start_time": "09:30",
+                "end_time": "09:45",
+                "priority": 5,
+                "tags": [],
+            },
+            {
+                "title": "Deep Work Block 2",
+                "category": "work",
+                "start_time": "09:45",
+                "end_time": "11:45",
+                "priority": 1,
+                "tags": ["focus"],
+            },
+            {
+                "title": "Lunch",
+                "category": "meal",
+                "start_time": "12:00",
+                "end_time": "12:45",
+                "priority": 3,
+                "tags": ["meal"],
+            },
+            {
+                "title": "Study / Learning",
+                "category": "study",
+                "start_time": "13:00",
+                "end_time": "14:30",
+                "priority": 2,
+                "tags": ["study"],
+            },
+            {
+                "title": "Exercise",
+                "category": "fitness",
+                "start_time": "15:00",
+                "end_time": "16:00",
+                "priority": 2,
+                "tags": ["health"],
+            },
+            {
+                "title": "Buffer / Personal",
+                "category": "buffer",
+                "start_time": "16:15",
+                "end_time": "17:00",
+                "priority": 7,
+                "tags": [],
+            },
+            {
+                "title": "Dinner",
+                "category": "meal",
+                "start_time": "19:00",
+                "end_time": "19:45",
+                "priority": 3,
+                "tags": ["meal"],
+            },
+            {
+                "title": "Evening Wind-Down",
+                "category": "routine",
+                "start_time": "21:30",
+                "end_time": "22:00",
+                "priority": 4,
+                "tags": ["evening"],
+            },
+            {
+                "title": "Sleep",
+                "category": "sleep",
+                "start_time": "22:30",
+                "end_time": "06:00",
+                "priority": 1,
+                "tags": ["sleep"],
+            },
         ]
 
     def _parse_ai_block(self, data: dict, plan_id: uuid.UUID) -> ScheduleBlock:
