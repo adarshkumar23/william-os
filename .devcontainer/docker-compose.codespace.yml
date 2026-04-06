@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: william
+      POSTGRES_PASSWORD: william
+      POSTGRES_DB: williamos
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../scripts/init-schemas.sql:/docker-entrypoint-initdb.d/01-schemas.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U william -d williamos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
