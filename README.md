@@ -91,6 +91,8 @@ make test-load     # Run Locust load tests
 - Security audit: `docs/SECURITY_AUDIT.md`
 - Performance pass: `docs/PERFORMANCE_PASS.md`
 - Deployment runbook: `docs/DEPLOYMENT_RUNBOOK.md`
+- User documentation: `docs/USER_DOCUMENTATION.md`
+- API finalization: `docs/API_DOCUMENTATION_FINAL.md`
 
 ## API Endpoints
 
