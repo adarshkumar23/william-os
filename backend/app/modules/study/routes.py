@@ -177,52 +177,6 @@ async def list_cards(
     return success([item.model_dump(mode="json") for item in cards])
 
 
-@router.get("/cards/{card_id}")
-async def get_card(
-    card_id: uuid.UUID,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    service = StudyService(db)
-    card = await service.get_card(user_id=user_id, card_id=card_id)
-    return success(card.model_dump(mode="json"))
-
-
-@router.patch("/cards/{card_id}")
-async def update_card(
-    card_id: uuid.UUID,
-    data: RevisionCardUpdate,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    service = StudyService(db)
-    card = await service.update_card(user_id=user_id, card_id=card_id, data=data)
-    return success(card.model_dump(mode="json"))
-
-
-@router.delete("/cards/{card_id}")
-async def delete_card(
-    card_id: uuid.UUID,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    service = StudyService(db)
-    await service.delete_card(user_id=user_id, card_id=card_id)
-    return success({"deleted": True})
-
-
-@router.post("/cards/{card_id}/review")
-async def review_card(
-    card_id: uuid.UUID,
-    data: ReviewResult,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    service = StudyService(db)
-    card = await service.review_card(user_id=user_id, card_id=card_id, quality=data.quality)
-    return success(card.model_dump(mode="json"))
-
-
 @router.get("/cards/due")
 async def cards_due(
     for_date: date | None = Query(default=None),
@@ -233,6 +187,17 @@ async def cards_due(
     resolved_date = for_date or date.today()
     cards = await service.get_cards_due(user_id=user_id, on_date=resolved_date)
     return success([item.model_dump(mode="json") for item in cards])
+
+
+@router.get("/cards/{card_id}")
+async def get_card(
+    card_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = StudyService(db)
+    card = await service.get_card(user_id=user_id, card_id=card_id)
+    return success(card.model_dump(mode="json"))
 
 
 @router.post("/mocks", status_code=201)

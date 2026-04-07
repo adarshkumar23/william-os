@@ -31,7 +31,7 @@ class AgentStatus(Base):
     last_action: Mapped[dict] = mapped_column(JSONB, default=dict)
     last_run_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )
@@ -70,7 +70,7 @@ class AgentActionLog(Base):
     action_payload: Mapped[dict] = mapped_column(JSONB, default=dict)
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )

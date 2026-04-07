@@ -62,7 +62,7 @@ class NotificationLog(Base):
     payload: Mapped[dict] = mapped_column(JSONB, default=dict)
     sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
     )
     delivered: Mapped[bool] = mapped_column(Boolean, default=False)

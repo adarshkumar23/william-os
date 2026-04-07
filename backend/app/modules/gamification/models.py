@@ -29,7 +29,7 @@ class UserXP(Base):
     level: Mapped[int] = mapped_column(Integer, default=1)
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )
@@ -50,7 +50,7 @@ class XPEvent(Base):
     xp_earned: Mapped[int] = mapped_column(Integer, nullable=False)
     earned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )
@@ -80,7 +80,7 @@ class PersonalRecord(Base):
     value: Mapped[float] = mapped_column(Float, nullable=False)
     achieved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )

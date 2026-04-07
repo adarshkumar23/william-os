@@ -54,7 +54,7 @@ class RuleExecutionLog(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )

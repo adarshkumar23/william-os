@@ -174,7 +174,7 @@ class DecisionService:
         for item in decisions:
             by_type[item.decision_type] += 1
             if item.chosen_at:
-                decided_deltas.append((item.chosen_at - item.created_at).total_seconds() / 3600.0)
+                decided_deltas.append((item.chosen_at.replace(tzinfo=None) - item.created_at.replace(tzinfo=None)).total_seconds() / 3600.0)
             if item.outcome_rating is not None:
                 ratings.append(float(item.outcome_rating))
             if item.ai_scores and item.chosen_option:

@@ -168,6 +168,7 @@ def create_app() -> FastAPI:
 def register_routes(app: FastAPI) -> None:
     """Register all module routers under /api/v1."""
     from app.modules.agents.routes import router as agents_router  # noqa: I001
+    from app.modules.calendar.routes import router as calendar_router
     from app.modules.auth.routes import router as auth_router
     from app.modules.briefing.routes import router as briefing_router
     from app.modules.chat.routes import router as chat_router
@@ -195,6 +196,7 @@ def register_routes(app: FastAPI) -> None:
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=prefix)
     app.include_router(agents_router, prefix=prefix)
+    app.include_router(calendar_router)
     app.include_router(briefing_router, prefix=prefix)
     app.include_router(scheduler_router, prefix=prefix)
     app.include_router(habits_router, prefix=prefix)

@@ -42,7 +42,7 @@ class UserMemory(Base):
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )
@@ -63,7 +63,7 @@ class MemoryInsight(Base):
     supporting_evidence: Mapped[dict] = mapped_column(JSONB, default=dict)
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
+        default=lambda: datetime.now(UTC).replace(tzinfo=None),
         nullable=False,
         index=True,
     )
