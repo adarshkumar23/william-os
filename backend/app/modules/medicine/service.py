@@ -143,8 +143,8 @@ class MedicineService:
         await self.db.refresh(log)
 
         if taken:
-            scheduled_dt = datetime.combine(log_date, scheduled_time, tzinfo=UTC)
-            taken_dt = datetime.combine(log_date, taken_at, tzinfo=UTC) if taken_at else scheduled_dt
+            scheduled_dt = datetime.combine(log_date, scheduled_time)
+            taken_dt = datetime.combine(log_date, taken_at) if taken_at else scheduled_dt
             delta_minutes = (taken_dt - scheduled_dt).total_seconds() / 60.0
             is_on_time = abs(delta_minutes) <= 30.0
 
@@ -240,11 +240,12 @@ class MedicineService:
                 if slot in logged_slots:
                     continue
 
-                scheduled = datetime.combine(today, parsed_time, tzinfo=UTC)
+                scheduled = datetime.combine(today, parsed_time)
                 delta_minutes = (scheduled - now).total_seconds() / 60
                 if 0 <= delta_minutes <= within_minutes:
                     reminders.append(
                         UpcomingReminder(
+                            medicine_id=medicine.id,
                             medicine_name=medicine.name,
                             dosage=medicine.dosage,
                             scheduled_time=slot,

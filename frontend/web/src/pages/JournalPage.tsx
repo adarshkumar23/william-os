@@ -170,12 +170,18 @@ export default function JournalPage() {
             className="h-72 w-full rounded-input border border-border bg-[#24201d] p-4 text-sm leading-relaxed text-text-primary outline-none"
           />
           <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <input
+            <select
               value={mood}
               onChange={(event) => setMood(event.target.value)}
-              placeholder="Mood"
-              className="rounded-input border border-border bg-surface-raised px-3 py-2 text-sm"
-            />
+              className="rounded-input border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
+            >
+              <option value="">Mood</option>
+              <option value="great">☀️ Great</option>
+              <option value="good">🌤 Good</option>
+              <option value="okay">⛅ Okay</option>
+              <option value="low">🌧 Low</option>
+              <option value="bad">⛈️ Bad</option>
+            </select>
             <input
               value={tags}
               onChange={(event) => setTags(event.target.value)}

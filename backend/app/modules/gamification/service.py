@@ -100,8 +100,8 @@ class GamificationService:
         result = await self.db.execute(
             select(XPEvent)
             .where(XPEvent.user_id == user_id)
-            .where(XPEvent.earned_at >= datetime.combine(week_start, datetime.min.time(), tzinfo=UTC))
-            .where(XPEvent.earned_at < datetime.combine(week_end, datetime.min.time(), tzinfo=UTC))
+            .where(XPEvent.earned_at >= datetime.combine(week_start, datetime.min.time()))
+            .where(XPEvent.earned_at < datetime.combine(week_end, datetime.min.time()))
             .order_by(XPEvent.earned_at.asc())
         )
         events = result.scalars().all()
@@ -149,8 +149,8 @@ class GamificationService:
         xp_query = await self.db.execute(
             select(func.coalesce(func.sum(XPEvent.xp_earned), 0))
             .where(XPEvent.user_id == user_id)
-            .where(XPEvent.earned_at >= datetime.combine(week_start, datetime.min.time(), tzinfo=UTC))
-            .where(XPEvent.earned_at < datetime.combine(week_end, datetime.min.time(), tzinfo=UTC))
+            .where(XPEvent.earned_at >= datetime.combine(week_start, datetime.min.time()))
+            .where(XPEvent.earned_at < datetime.combine(week_end, datetime.min.time()))
         )
         earned = float(xp_query.scalar() or 0.0)
         return round(max(0.0, expected_to_date - earned), 2)
@@ -289,8 +289,8 @@ class GamificationService:
             .where(XPEvent.user_id == user_id)
             .where(XPEvent.source_module == "habits")
             .where(XPEvent.action == "habit_checkin")
-            .where(XPEvent.earned_at >= datetime.combine(week_start, datetime.min.time(), tzinfo=UTC))
-            .where(XPEvent.earned_at < datetime.combine(week_end, datetime.min.time(), tzinfo=UTC))
+            .where(XPEvent.earned_at >= datetime.combine(week_start, datetime.min.time()))
+            .where(XPEvent.earned_at < datetime.combine(week_end, datetime.min.time()))
         )
         completed = float(result.scalar() or 0.0)
         await self._upsert_record_if_higher(

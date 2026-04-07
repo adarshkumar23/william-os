@@ -397,7 +397,7 @@ class MemoryService:
             .where(ModuleSignal.signal_type == "energy")
             .where(
                 ModuleSignal.recorded_at
-                >= datetime.combine(cutoff, datetime.min.time(), tzinfo=UTC)
+                >= datetime.combine(cutoff, datetime.min.time())
             )
         )
 
@@ -489,7 +489,7 @@ class MemoryService:
             .where(LifeScore.user_id == user_id)
             .where(
                 LifeScore.computed_at
-                >= datetime.combine(cutoff, datetime.min.time(), tzinfo=UTC)
+                >= datetime.combine(cutoff, datetime.min.time())
             )
         )
         scores_by_day: dict[date, list[float]] = defaultdict(list)

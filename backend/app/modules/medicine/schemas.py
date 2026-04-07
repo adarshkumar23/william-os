@@ -104,6 +104,7 @@ class MedicineLogResponse(BaseModel):
 
 
 class UpcomingReminder(BaseModel):
+    medicine_id: UUID
     medicine_name: str
     dosage: str
     scheduled_time: str
