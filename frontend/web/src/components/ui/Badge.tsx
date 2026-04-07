@@ -3,6 +3,7 @@ import clsx from "clsx";
 type BadgeProps = {
   label: string;
   variant?: "default" | "success" | "warning" | "danger" | "accent";
+  className?: string;
 };
 
 const variantClass: Record<NonNullable<BadgeProps["variant"]>, string> = {
@@ -13,12 +14,13 @@ const variantClass: Record<NonNullable<BadgeProps["variant"]>, string> = {
   accent: "bg-accent/15 text-accent",
 };
 
-export default function Badge({ label, variant = "default" }: BadgeProps) {
+export default function Badge({ label, variant = "default", className }: BadgeProps) {
   return (
     <span
       className={clsx(
         "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
         variantClass[variant],
+        className
       )}
     >
       {label}

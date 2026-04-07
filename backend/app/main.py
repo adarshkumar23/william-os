@@ -170,6 +170,7 @@ def register_routes(app: FastAPI) -> None:
     from app.modules.agents.routes import router as agents_router  # noqa: I001
     from app.modules.auth.routes import router as auth_router
     from app.modules.briefing.routes import router as briefing_router
+    from app.modules.chat.routes import router as chat_router
     from app.modules.decisions.routes import router as decisions_router
     from app.modules.email_intel.routes import router as email_router
     from app.modules.experiments.routes import router as experiments_router
@@ -212,6 +213,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(study_router, prefix=prefix)
     app.include_router(trading_router, prefix=prefix)
     app.include_router(sleep_router, prefix=prefix)
+    app.include_router(chat_router, prefix=prefix)
     app.include_router(decisions_router, prefix=prefix)
     app.include_router(experiments_router, prefix=prefix)
     app.include_router(export_router, prefix=prefix)

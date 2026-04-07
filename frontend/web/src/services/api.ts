@@ -46,6 +46,9 @@ import {
   UserProfile,
   VoiceHistoryItem,
   Workout,
+  ChatSession,
+  ChatSessionListItem,
+  ChatMessage,
 } from "../types/api";
 import { recordApiError, recordRefreshTokenFailure } from "../observability/client";
 
@@ -345,6 +348,14 @@ export const api = {
 
   voice: {
     command: (payload: { text: string; journal_passphrase?: string }) => post<AnyRecord>("/voice/command", payload),
+    transcribe: async (audioBlob: Blob) => {
+      const formData = new FormData();
+      formData.append("audio", audioBlob, "voice-recording.webm");
+      const response = await apiClient.post<ApiEnvelope<AnyRecord>>("/voice/transcribe", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return response.data.data;
+    },
     history: (params?: { limit?: number; offset?: number }) => get<VoiceHistoryItem[]>("/voice/history", params),
   },
 
@@ -452,5 +463,15 @@ export const api = {
       return response.data as Blob;
     },
     deleteAccount: (password: string) => del<{ deleted: boolean }>("/export/account", { password }),
+  },
+  chat: {
+    createSession: (payload: { agent_name: string; title: string }) => 
+      post<ChatSession>("/chat/sessions", payload),
+    listSessions: () => get<ChatSessionListItem[]>("/chat/sessions"),
+    deleteSession: (sessionId: string) => del<{ deleted: boolean }>(`/chat/sessions/${sessionId}`),
+    sendMessage: (sessionId: string, payload: { content: string }) => 
+      post<{ user_message: ChatMessage; assistant_message: ChatMessage }>(`/chat/sessions/${sessionId}/messages`, payload),
+    getMessages: (sessionId: string, params?: { limit?: number }) => 
+      get<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`, params),
   },
 };

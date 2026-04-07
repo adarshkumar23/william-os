@@ -515,5 +515,41 @@ export type VoiceHistoryItem = {
   intent_confidence: number;
   response_text: string;
   created_at: string;
-  [key: string]: unknown;
+}
+
+export type ChatSession = {
+  id: string;
+  user_id: string;
+  agent_name: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message?: ChatMessage | null;
+};
+
+export type ChatSessionListItem = {
+  id: string;
+  user_id: string;
+  agent_name: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message_preview?: string | null;
+};
+
+export type ChatMessage = {
+  id: string;
+  session_id: string;
+  user_id: string;
+  role: "user" | "assistant";
+  content: string;
+  actions_taken?: Array<{
+    type: string;
+    params: Record<string, unknown>;
+    success: boolean;
+    message: string;
+    data?: Record<string, unknown> | null;
+  }> | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
 };

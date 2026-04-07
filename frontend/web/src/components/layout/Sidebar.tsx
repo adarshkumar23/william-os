@@ -5,12 +5,14 @@ import {
   HeartPulse,
   LayoutDashboard,
   LineChart,
+  MessageSquare,
   Moon,
   Pill,
   ScrollText,
   Settings,
   Target,
 } from "lucide-react";
+import type React from "react";
 import { NavLink } from "react-router-dom";
 
 import { useAuth } from "../../contexts/AuthContext";
@@ -26,6 +28,7 @@ const groups: Array<{ label: string; items: NavRow[] }> = [
     label: "Daily",
     items: [
       { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/chat", label: "Chat", icon: MessageSquare },
       { to: "/habits", label: "Habits", icon: Target },
       { to: "/journal", label: "Journal", icon: ScrollText },
       { to: "/medicine", label: "Medicine", icon: Pill },

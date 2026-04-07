@@ -12,6 +12,7 @@ from app.modules.audit.models import AuditLog  # noqa
 
 # Import all models so Alembic sees them
 from app.modules.auth.models import Family, RefreshTokenBlacklist, User, UserDevice  # noqa
+from app.modules.chat.models import ChatMessage, ChatSession  # noqa
 from app.modules.decisions.models import Decision, DecisionTemplate  # noqa
 from app.modules.email_intel.models import EmailAccount, EmailSummary  # noqa
 from app.modules.fitness.models import (  # noqa

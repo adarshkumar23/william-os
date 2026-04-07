@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
   Activity,
   BookOpen,
+  Bot,
   Dumbbell,
   HeartPulse,
   Moon,
@@ -90,7 +91,7 @@ export default function DashboardPage() {
         profile,
         feedPage,
         warningRows,
-        statuses,
+        chatSessions,
       ] = await Promise.all([
         api.scheduler.today().catch(() => null),
         api.habits.list({ active_only: true, limit: 100, offset: 0 }),
@@ -102,7 +103,7 @@ export default function DashboardPage() {
         api.gamification.profile().catch(() => null),
         api.feed.list({ limit: 20 }).catch(() => null),
         api.intelligence.warnings().catch(() => []),
-        api.agents.status().catch(() => []),
+        api.chat.listSessions().catch(() => []),
       ]);
 
       setPlan(todayPlan);
@@ -115,7 +116,7 @@ export default function DashboardPage() {
       setGamificationProfile(profile);
       setActivityFeedItems(feedPage?.items ?? []);
       setWarnings(warningRows ?? []);
-      setAgentStatuses(statuses ?? []);
+      setAgentStatuses(chatSessions.filter(s => s.agent_name === 'os').slice(0, 1) as any);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard");
     } finally {
@@ -365,34 +366,44 @@ export default function DashboardPage() {
       </motion.section>
 
       <motion.section variants={staggerContainer} initial="initial" animate="animate">
-        <AppCard>
-          <p className="section-label">Agents Panel</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {loading
-              ? Array.from({ length: 5 }).map((_, idx) => <SkeletonLoader key={idx} variant="card" />)
-              : agentStatuses.slice(0, 5).map((agent) => (
-                  <motion.div key={agent.id} variants={fadeMotion}>
-                    <AppCard padding="sm" className="h-full bg-surface-raised">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-medium capitalize text-text-primary">{agent.agent_name}</p>
-                        <Badge
-                          label={agent.status}
-                          variant={
-                            agent.status === "healthy"
-                              ? "success"
-                              : agent.status === "warning"
-                                ? "warning"
-                                : "danger"
-                          }
-                        />
-                      </div>
-                      <p className="meta-copy mt-2 line-clamp-2">
-                        {String(agent.last_recommendation?.summary || "No recommendation yet")}
-                      </p>
-                      <p className="meta-copy mt-3">Last action: {String(agent.last_action?.action_type || "none")}</p>
-                    </AppCard>
-                  </motion.div>
-                ))}
+        <AppCard className="relative overflow-hidden bg-gradient-to-br from-surface to-surface-raised border-accent/20">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold capitalize text-accent flex items-center gap-2">
+                <Bot className="h-4 w-4" /> OS Agent
+              </p>
+              <p className="mt-1 text-sm text-text-primary">
+                {agentStatuses.length > 0 && typeof (agentStatuses[0] as any).last_message_preview === 'string' 
+                   ? (agentStatuses[0] as any).last_message_preview 
+                   : "I am ready to manage your day. How can I help?"}
+              </p>
+            </div>
+            
+            <button
+               onClick={() => navigate('/chat')}
+               className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-hover"
+            >
+               Open Chat
+            </button>
+          </div>
+          
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[
+              "How am I doing?",
+              "Reschedule my day",
+              "Log sleep",
+              "Morning briefing"
+            ].map(prompt => (
+               <button
+                 key={prompt}
+                 onClick={() => {
+                   navigate('/chat', { state: { prefill: prompt } });
+                 }}
+                 className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-text-secondary transition hover:border-accent hover:text-accent"
+               >
+                 {prompt}
+               </button>
+            ))}
           </div>
         </AppCard>
       </motion.section>

@@ -19,6 +19,7 @@ import SettingsPage from "./pages/SettingsPage";
 import SleepPage from "./pages/SleepPage";
 import StudyPage from "./pages/StudyPage";
 import TradingPage from "./pages/TradingPage";
+import ChatPage from "./pages/ChatPage";
 
 function AnimatedRouteWrapper({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -105,6 +106,10 @@ export default function App() {
             <Route
               path="/decisions"
               element={<ModuleBoundary moduleName="decisions"><AnimatedRouteWrapper><DecisionsPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/chat"
+              element={<ModuleBoundary moduleName="chat"><AnimatedRouteWrapper><ChatPage /></AnimatedRouteWrapper></ModuleBoundary>}
             />
             <Route
               path="/rules"
