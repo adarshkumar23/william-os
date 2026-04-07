@@ -411,6 +411,55 @@ export default function SettingsPage() {
           Download audit CSV
         </button>
       </section>
+
+      <section className="card p-4">
+        <h2 className="text-lg font-semibold">Connected Accounts</h2>
+        <p className="text-sm text-[rgb(var(--text-dim))] mb-4">Connect your calendars to William OS.</p>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-xl border border-[rgb(var(--border))] px-4 py-3">
+            <div>
+              <p className="font-medium">Google Calendar</p>
+              <p className="text-xs text-[rgb(var(--text-dim))]">Sync your Google Calendar events</p>
+            </div>
+            
+            <a
+              href="/api/v1/calendar/google/auth-url"
+              onClick={async (e) => {
+                e.preventDefault();
+                const res = await fetch('/api/v1/calendar/google/auth-url', { headers: { Authorization: `Bearer ${localStorage.getItem('william_access_token')}` } });
+                const data = await res.json();
+                if (data.auth_url) { window.location.href = data.auth_url; } else { alert('Error: ' + JSON.stringify(data)); }
+              }}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+            >
+              Connect
+            </a>
+          </div>
+          <div className="rounded-xl border border-[rgb(var(--border))] px-4 py-3">
+            <div className="mb-3">
+              <p className="font-medium">Apple Calendar</p>
+              <p className="text-xs text-[rgb(var(--text-dim))]">Connect via iCloud CalDAV</p>
+            </div>
+            <div className="space-y-2">
+              <input id="apple-id" type="email" placeholder="Apple ID (iCloud email)" className="w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm" />
+              <input id="apple-pass" type="password" placeholder="App-specific password" className="w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm" />
+              <button
+                type="button"
+                onClick={async () => {
+                  const appleId = (document.getElementById('apple-id') as HTMLInputElement).value;
+                  const appPass = (document.getElementById('apple-pass') as HTMLInputElement).value;
+                  const res = await fetch('/api/v1/calendar/apple/connect', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('william_access_token')}` }, body: JSON.stringify({ apple_id: appleId, app_password: appPass }) });
+                  const data = await res.json();
+                  alert(data.status === 'connected' ? 'Apple Calendar connected!' : 'Failed: ' + JSON.stringify(data));
+                }}
+                className="rounded-xl bg-gray-700 px-4 py-2 text-sm text-white hover:bg-gray-600"
+              >
+                Connect Apple Calendar
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

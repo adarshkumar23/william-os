@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
-from sqlalchemy.orm import Session
+from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
 from .models import AppleCredential, CachedEvent
 
-def connect_apple(db: Session, user_id: int, apple_id: str, app_password: str) -> dict:
+
+async def connect_apple(db: AsyncSession, user_id, apple_id: str, app_password: str) -> dict:
     try:
         import caldav
         client = caldav.DAVClient(url="https://caldav.icloud.com",
@@ -11,30 +13,31 @@ def connect_apple(db: Session, user_id: int, apple_id: str, app_password: str) -
         client.principal().calendars()
     except Exception as e:
         raise Exception(f"Could not connect to iCloud: {str(e)}")
-    cred = db.query(AppleCredential).filter_by(user_id=user_id).first()
+    result = await db.execute(select(AppleCredential).where(AppleCredential.user_id == str(user_id)))
+    cred = result.scalar_one_or_none()
     if not cred:
-        cred = AppleCredential(user_id=user_id)
+        cred = AppleCredential(user_id=str(user_id))
         db.add(cred)
     cred.apple_id_encrypted = apple_id
     cred.app_password_encrypted = app_password
-    db.commit()
+    await db.commit()
     return {"status": "connected"}
 
-def fetch_events(db: Session, user_id: int, days: int = 7) -> List[dict]:
+
+async def fetch_events(db: AsyncSession, user_id, days: int = 7) -> List[dict]:
     try:
         import caldav
-        cred = db.query(AppleCredential).filter_by(user_id=user_id).first()
+        result = await db.execute(select(AppleCredential).where(AppleCredential.user_id == str(user_id)))
+        cred = result.scalar_one_or_none()
         if not cred:
             return []
         client = caldav.DAVClient(url="https://caldav.icloud.com",
                                   username=cred.apple_id_encrypted,
                                   password=cred.app_password_encrypted)
-        principal = client.principal()
-        calendars = principal.calendars()
         now = datetime.utcnow()
         end = now + timedelta(days=days)
         events = []
-        for calendar in calendars:
+        for calendar in client.principal().calendars():
             try:
                 for event in calendar.date_search(start=now, end=end, expand=True):
                     comp = event.vobject_instance.vevent
@@ -52,22 +55,26 @@ def fetch_events(db: Session, user_id: int, days: int = 7) -> List[dict]:
                                    "source": "apple"})
             except Exception:
                 continue
-        _cache_events(db, user_id, "apple", events)
+        await _cache_events(db, user_id, events)
         return events
     except Exception:
         return []
 
-def is_connected(db: Session, user_id: int) -> bool:
-    cred = db.query(AppleCredential).filter_by(user_id=user_id).first()
+
+async def is_connected(db: AsyncSession, user_id) -> bool:
+    result = await db.execute(select(AppleCredential).where(AppleCredential.user_id == str(user_id)))
+    cred = result.scalar_one_or_none()
     return bool(cred and cred.apple_id_encrypted)
 
-def disconnect(db: Session, user_id: int):
-    db.query(AppleCredential).filter_by(user_id=user_id).delete()
-    db.commit()
 
-def _cache_events(db: Session, user_id: int, source: str, events: List[dict]):
-    db.query(CachedEvent).filter_by(user_id=user_id, source=source).delete()
+async def disconnect(db: AsyncSession, user_id):
+    await db.execute(delete(AppleCredential).where(AppleCredential.user_id == str(user_id)))
+    await db.commit()
+
+
+async def _cache_events(db: AsyncSession, user_id, events):
+    await db.execute(delete(CachedEvent).where(CachedEvent.user_id == str(user_id), CachedEvent.source == "apple"))
     for e in events:
-        db.add(CachedEvent(user_id=user_id, source=source, event_id=e.get("id"),
-                           title=e.get("title")))
-    db.commit()
+        db.add(CachedEvent(user_id=str(user_id), source="apple",
+                           event_id=e.get("id"), title=e.get("title")))
+    await db.commit()

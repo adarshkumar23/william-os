@@ -27,27 +27,26 @@ class AppleConnectRequest(BaseModel):
 # ── Google ──────────────────────────────────────────────────────
 
 @router.get("/google/auth-url")
-def google_auth_url(user_id: uuid.UUID = Depends(get_current_user_id)):
-    url = google_service.get_auth_url()
+async def google_auth_url(user_id: uuid.UUID = Depends(get_current_user_id)):
+    url = google_service.get_auth_url(user_id)
     return {"auth_url": url}
 
 @router.get("/google/callback")
-def google_callback(code: str = Query(...), db: AsyncSession = Depends(get_db),
-                    user_id: uuid.UUID = Depends(get_current_user_id)):
+async def google_callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
     try:
-        google_service.exchange_code(code, db, user_id)
+        await google_service.exchange_code(code, db, state)
         return RedirectResponse(url="https://williamos.duckdns.org/settings?calendar=connected")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/google/events")
-def google_events(days: int = 7, db: AsyncSession = Depends(get_db),
+async def google_events(days: int = 7, db: AsyncSession = Depends(get_db),
                   user_id: uuid.UUID = Depends(get_current_user_id)):
-    events = google_service.fetch_events(db, user_id, days)
+    events = await google_service.fetch_events(db, user_id, days)
     return {"events": events, "count": len(events)}
 
 @router.post("/google/events")
-def google_create_event(payload: CreateEventRequest, db: AsyncSession = Depends(get_db),
+async def google_create_event(payload: CreateEventRequest, db: AsyncSession = Depends(get_db),
                         user_id: uuid.UUID = Depends(get_current_user_id)):
     result = google_service.create_event(db, user_id, payload.title,
                                          payload.start, payload.end,
@@ -55,49 +54,49 @@ def google_create_event(payload: CreateEventRequest, db: AsyncSession = Depends(
     return result
 
 @router.delete("/google/events/{event_id}")
-def google_delete_event(event_id: str, db: AsyncSession = Depends(get_db),
+async def google_delete_event(event_id: str, db: AsyncSession = Depends(get_db),
                         user_id: uuid.UUID = Depends(get_current_user_id)):
-    return google_service.delete_event(db, user_id, event_id)
+    return await google_service.delete_event(db, user_id, event_id)
 
 @router.get("/google/status")
-def google_status(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
-    return {"connected": google_service.is_connected(db, user_id)}
+async def google_status(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    return {"connected": await google_service.is_connected(db, user_id)}
 
 @router.delete("/google/disconnect")
-def google_disconnect(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
-    google_service.disconnect(db, user_id)
+async def google_disconnect(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    await google_service.disconnect(db, user_id)
     return {"status": "disconnected"}
 
 # ── Apple ──────────────────────────────────────────────────────
 
 @router.post("/apple/connect")
-def apple_connect(payload: AppleConnectRequest, db: AsyncSession = Depends(get_db),
+async def apple_connect(payload: AppleConnectRequest, db: AsyncSession = Depends(get_db),
                   user_id: uuid.UUID = Depends(get_current_user_id)):
     try:
-        return apple_service.connect_apple(db, user_id,
+        return await apple_service.connect_apple(db, user_id,
                                            payload.apple_id, payload.app_password)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/apple/events")
-def apple_events(days: int = 7, db: AsyncSession = Depends(get_db),
+async def apple_events(days: int = 7, db: AsyncSession = Depends(get_db),
                  user_id: uuid.UUID = Depends(get_current_user_id)):
-    events = apple_service.fetch_events(db, user_id, days)
+    events = await apple_service.fetch_events(db, user_id, days)
     return {"events": events, "count": len(events)}
 
 @router.get("/apple/status")
-def apple_status(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
-    return {"connected": apple_service.is_connected(db, user_id)}
+async def apple_status(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    return {"connected": await apple_service.is_connected(db, user_id)}
 
 @router.delete("/apple/disconnect")
-def apple_disconnect(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
-    apple_service.disconnect(db, user_id)
+async def apple_disconnect(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    await apple_service.disconnect(db, user_id)
     return {"status": "disconnected"}
 
 # ── Unified ─────────────────────────────────────────────────────
 
 @router.get("/today")
-def today_events(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+async def today_events(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     today = datetime.utcnow().date()
     events = db.query(CachedEvent).filter(
         CachedEvent.user_id == user_id,
@@ -109,7 +108,7 @@ def today_events(db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depend
                         "location": e.location} for e in events]}
 
 @router.get("/upcoming")
-def upcoming_events(days: int = 7, db: AsyncSession = Depends(get_db),
+async def upcoming_events(days: int = 7, db: AsyncSession = Depends(get_db),
                     user_id: uuid.UUID = Depends(get_current_user_id)):
     g = google_service.fetch_events(db, user_id, days)
     a = apple_service.fetch_events(db, user_id, days)

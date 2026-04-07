@@ -6,7 +6,7 @@ class GoogleToken(Base):
     __tablename__ = "google_tokens"
     __table_args__ = {"schema": "calendar"}
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, nullable=False, unique=True)
+    user_id = Column(Text, nullable=False, unique=True)
     access_token = Column(Text)
     refresh_token = Column(Text)
     token_expiry = Column(DateTime)
@@ -17,7 +17,7 @@ class AppleCredential(Base):
     __tablename__ = "apple_credentials"
     __table_args__ = {"schema": "calendar"}
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, nullable=False, unique=True)
+    user_id = Column(Text, nullable=False, unique=True)
     apple_id_encrypted = Column(Text)
     app_password_encrypted = Column(Text)
     caldav_url = Column(Text, default="https://caldav.icloud.com")
@@ -27,7 +27,7 @@ class CachedEvent(Base):
     __tablename__ = "cached_events"
     __table_args__ = {"schema": "calendar"}
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, nullable=False)
+    user_id = Column(Text, nullable=False)
     source = Column(String(10))
     event_id = Column(Text)
     title = Column(Text)
