@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 
 import { api } from "../services/api";
 import { NotificationItem } from "../types/api";
+import CommandPalette from "./CommandPalette";
 import NotificationsPanel from "./NotificationsPanel";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
@@ -56,6 +57,8 @@ export default function Layout() {
         onClose={() => setOpenNotifications(false)}
         notifications={notifications}
       />
+
+      <CommandPalette />
     </div>
   );
 }

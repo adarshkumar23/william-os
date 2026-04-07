@@ -40,7 +40,7 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
 };
 
 type AuthContextValue = AuthState & {
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, totpCode?: string) => Promise<void>;
   register: (payload: {
     email: string;
     username: string;
@@ -78,13 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       ...state,
-      login: async (email: string, password: string) => {
+      login: async (email: string, password: string, totpCode?: string) => {
         dispatch({ type: "SET_LOADING", payload: true });
         const tokens = await api.auth.login({
           email,
           password,
           device_name: "Web Dashboard",
           device_type: "web",
+          totp_code: totpCode,
         });
         saveTokens(tokens);
         const me = await api.auth.me();

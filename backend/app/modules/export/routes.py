@@ -67,6 +67,22 @@ async def export_full(
     )
 
 
+@router.get("/audit-log.csv")
+async def export_audit_log_csv(
+    user_id: UserIdDep,
+    db: DbSessionDep,
+):
+    service = ExportService(db)
+    payload = await service.export_audit_csv(user_id=user_id)
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    filename = f"william_audit_log_{timestamp}.csv"
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/journal")
 async def export_journal(
     request: JournalExportRequest,

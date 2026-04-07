@@ -15,6 +15,7 @@ import httpx
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
+from app.modules.memory.service import MemoryService
 from app.modules.scheduler.models import (
     BlockCategory,
     BlockStatus,
@@ -58,6 +59,9 @@ YESTERDAY'S PERFORMANCE:
 
 ENERGY PATTERN (learned):
 {energy_pattern}
+
+MEMORY PROFILE SIGNALS:
+{memory_profile}
 
 RULES:
 1. Never schedule over fixed blocks
@@ -538,6 +542,11 @@ class SchedulerService:
             "priorities": request.extra_context.get("priorities", []),
             "yesterday_summary": {},
             "energy_pattern": energy_note,
+            "memory_profile": await MemoryService(self.db).get_relevant_memory_context(
+                user_id=user_id,
+                modules=["sleep", "study", "habits", "scheduler"],
+                limit=8,
+            ),
         }
 
     def _build_prompt(self, context: dict) -> str:
@@ -551,6 +560,7 @@ class SchedulerService:
             priorities=json.dumps(context.get("priorities", []), indent=2),
             yesterday_summary=json.dumps(context.get("yesterday_summary", {}), indent=2),
             energy_pattern=context.get("energy_pattern", "unknown"),
+            memory_profile=context.get("memory_profile", "No memory profile available."),
         )
 
     def _build_reschedule_prompt(self, plan: DailyPlan, request: RescheduleRequest) -> str:

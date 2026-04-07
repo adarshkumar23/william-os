@@ -7,6 +7,7 @@ import {
   LineChart,
   Moon,
   Pill,
+  SlidersHorizontal,
   ScrollText,
   Settings,
   Sunrise,
@@ -25,6 +26,7 @@ const links = [
   { to: "/trading", label: "Trading", icon: LineChart },
   { to: "/sleep", label: "Sleep", icon: Moon },
   { to: "/decisions", label: "Decisions", icon: Brain },
+  { to: "/rules", label: "Rules", icon: SlidersHorizontal },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

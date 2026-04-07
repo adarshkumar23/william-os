@@ -1,13 +1,19 @@
 import { AlertTriangle, RefreshCcw } from "lucide-react";
 import React from "react";
 
+import { captureUIError } from "../observability/client";
+
 type ErrorBoundaryState = {
   hasError: boolean;
   message: string;
 };
 
-export class ErrorBoundary extends React.Component<React.PropsWithChildren, ErrorBoundaryState> {
-  constructor(props: React.PropsWithChildren) {
+type ErrorBoundaryProps = React.PropsWithChildren<{
+  moduleName?: string;
+}>;
+
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, message: "" };
   }
@@ -18,6 +24,7 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Erro
 
   componentDidCatch(error: Error) {
     console.error("UI crashed", error);
+    captureUIError(error, { module: this.props.moduleName || "global" });
   }
 
   render() {

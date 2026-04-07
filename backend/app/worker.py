@@ -6,12 +6,14 @@ Background task processing for schedule generation, email sync, notifications.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from celery import Celery
 from celery.schedules import crontab
 
 from app.core.config import get_settings
+from app.core.observability import setup_celery_tracing
 
 settings = get_settings()
 
@@ -34,6 +36,8 @@ celery_app.conf.update(
     task_time_limit=180,
 )
 
+setup_celery_tracing(celery_app, settings)
+
 # ── Periodic Tasks (Beat Schedule) ──────────────────────────────
 
 celery_app.conf.beat_schedule = {
@@ -50,6 +54,11 @@ celery_app.conf.beat_schedule = {
     "prewake-email-briefing": {
         "task": "app.worker.send_prewake_briefings",
         "schedule": crontab(minute="*/15"),  # check every 15 min
+        "options": {"queue": "notifications"},
+    },
+    "morning-os-briefing": {
+        "task": "app.worker.send_morning_os_briefings",
+        "schedule": crontab(minute="*/5"),  # check every 5 min
         "options": {"queue": "notifications"},
     },
     "procrastination-check": {
@@ -90,6 +99,21 @@ celery_app.conf.beat_schedule = {
     "weekly-decision-review": {
         "task": "app.worker.send_weekly_decision_review",
         "schedule": crontab(day_of_week="sun", hour=10, minute=0),
+        "options": {"queue": "analysis"},
+    },
+    "weekly-memory-graph-update": {
+        "task": "app.worker.refresh_memory_graphs",
+        "schedule": crontab(day_of_week="sun", hour=0, minute=0),
+        "options": {"queue": "analysis"},
+    },
+    "hourly-agent-orchestration": {
+        "task": "app.worker.run_agent_orchestrator_cycle",
+        "schedule": crontab(minute=0),
+        "options": {"queue": "analysis"},
+    },
+    "predictive-warning-scan": {
+        "task": "app.worker.scan_predictive_warnings",
+        "schedule": crontab(minute=0, hour="*/6"),
         "options": {"queue": "analysis"},
     },
     "cleanup-expired-tokens": {
@@ -314,6 +338,66 @@ def check_procrastination():
                 except Exception as e:
                     logger.error(
                         "procrastination_check_failed",
+                        user_id=str(user.id),
+                        error=str(e),
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.send_morning_os_briefings")
+def send_morning_os_briefings():
+    """Send Morning OS briefing at each user's local wake_time + 5 minutes."""
+    import structlog
+
+    logger = structlog.get_logger("worker.morning_briefing")
+    logger.info("morning_briefing_check_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.briefing.service import MorningBriefingService
+
+        now_utc = datetime.now(UTC)
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(User.is_active == True)  # noqa: E712
+            )
+            users = result.scalars().all()
+
+            service = MorningBriefingService(db)
+            for user in users:
+                try:
+                    if not _is_briefing_due_now(
+                        wake_time_str=user.wake_time,
+                        timezone_name=user.timezone,
+                        now_utc=now_utc,
+                    ):
+                        continue
+
+                    already_sent = await service.was_briefing_sent_today(
+                        user_id=user.id,
+                        timezone_name=user.timezone,
+                        now_utc=now_utc,
+                    )
+                    if already_sent:
+                        continue
+
+                    await service.send_briefing(user_id=user.id)
+                    logger.info(
+                        "morning_briefing_sent",
+                        user_id=str(user.id),
+                        timezone=user.timezone,
+                        wake_time=user.wake_time,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "morning_briefing_failed",
                         user_id=str(user.id),
                         error=str(e),
                     )
@@ -718,6 +802,93 @@ def send_weekly_decision_review():
     _run_async(_run())
 
 
+@celery_app.task(name="app.worker.refresh_memory_graphs")
+def refresh_memory_graphs():
+    """Weekly cycle: refresh memory graph and regenerate insights for all users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.memory")
+    logger.info("memory_graph_refresh_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.memory.service import MemoryService
+
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+            users = result.scalars().all()
+
+            service = MemoryService(db)
+            for user in users:
+                try:
+                    await service.update_memory(user_id=user.id)
+                    await service.generate_insights(user_id=user.id)
+                except Exception as exc:
+                    logger.warning("memory_graph_refresh_failed", user_id=str(user.id), error=str(exc))
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.run_agent_orchestrator_cycle")
+def run_agent_orchestrator_cycle():
+    """Hourly cycle: run orchestrator agent for all active users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.agents")
+    logger.info("agent_orchestrator_cycle_started")
+
+    async def _run():
+        from app.core.database import async_session_factory
+        from app.modules.agents.service import OrchestratorAgentService
+
+        async with async_session_factory() as db:
+            service = OrchestratorAgentService(db)
+            try:
+                outcome = await service.run_for_all_active_users()
+                logger.info("agent_orchestrator_cycle_completed", **outcome)
+            except Exception as exc:
+                logger.warning("agent_orchestrator_cycle_failed", error=str(exc))
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.scan_predictive_warnings")
+def scan_predictive_warnings():
+    """Every 6 hours: run predictive warning scan for all active users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.predictive_warnings")
+    logger.info("predictive_warning_scan_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.intelligence.warnings_service import PredictiveWarningService
+
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+            users = result.scalars().all()
+
+            service = PredictiveWarningService(db)
+            for user in users:
+                try:
+                    await service.scan_user(user_id=user.id)
+                except Exception as exc:
+                    logger.warning("predictive_warning_scan_user_failed", user_id=str(user.id), error=str(exc))
+
+            await db.commit()
+
+    _run_async(_run())
+
+
 def _is_wake_time_approaching(wake_time_str: str, now: datetime, offset_minutes: int) -> bool:
     """Check whether wake_time is within the next prewake offset window (UTC)."""
     try:
@@ -731,6 +902,31 @@ def _is_wake_time_approaching(wake_time_str: str, now: datetime, offset_minutes:
     candidate = wake_today if wake_today >= now else wake_tomorrow
     minutes_until_wake = (candidate - now).total_seconds() / 60
     return 0 <= minutes_until_wake <= offset_minutes
+
+
+def _is_briefing_due_now(
+    wake_time_str: str,
+    timezone_name: str | None,
+    now_utc: datetime,
+    offset_minutes: int = 5,
+    dispatch_window_minutes: int = 10,
+) -> bool:
+    """Check if local time is within [wake+offset, wake+offset+window)."""
+    try:
+        tz = ZoneInfo(timezone_name or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    try:
+        wake_clock = datetime.strptime(wake_time_str, "%H:%M").time()
+    except ValueError:
+        return False
+
+    local_now = now_utc.astimezone(tz)
+    wake_dt_local = datetime.combine(local_now.date(), wake_clock, tzinfo=tz)
+    target = wake_dt_local + timedelta(minutes=offset_minutes)
+    delta_minutes = (local_now - target).total_seconds() / 60.0
+    return 0 <= delta_minutes < dispatch_window_minutes
 
 
 @celery_app.task(name="app.worker.cleanup_expired_tokens")

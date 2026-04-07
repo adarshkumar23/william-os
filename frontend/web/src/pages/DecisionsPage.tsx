@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Brain, CheckCircle2, Plus } from "lucide-react";
 
+import EmptyStatePanel from "../components/EmptyStatePanel";
 import Modal from "../components/Modal";
 import { api } from "../services/api";
 import { Decision, DecisionAnalysis } from "../types/api";
@@ -115,77 +116,89 @@ export default function DecisionsPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Active decisions</h2>
-          {activeDecisions.map((decision) => {
-            const analysis = analysisById[decision.id];
-            return (
-              <article key={decision.id} className="card p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{decision.title}</p>
-                    <p className="text-xs text-[rgb(var(--text-dim))]">Type: {decision.decision_type}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void onAnalyze(decision.id)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[rgb(var(--border))] px-2 py-1 text-xs"
-                  >
-                    <Brain className="h-3.5 w-3.5" /> Analyze
-                  </button>
-                </div>
+        {decisions.length === 0 ? (
+          <EmptyStatePanel
+            title="No Decisions Logged"
+            description="This section helps structure choices, compare options, and review outcomes with AI scoring."
+            ctaLabel="Create your first decision"
+            onCta={() => setOpenCreate(true)}
+            moduleKey="decisions"
+          />
+        ) : (
+          <>
+            <div className="space-y-3">
+              <h2 className="text-lg font-semibold">Active decisions</h2>
+              {activeDecisions.map((decision) => {
+                const analysis = analysisById[decision.id];
+                return (
+                  <article key={decision.id} className="card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{decision.title}</p>
+                        <p className="text-xs text-[rgb(var(--text-dim))]">Type: {decision.decision_type}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void onAnalyze(decision.id)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[rgb(var(--border))] px-2 py-1 text-xs"
+                      >
+                        <Brain className="h-3.5 w-3.5" /> Analyze
+                      </button>
+                    </div>
 
-                {analysis ? (
-                  <div className="mt-3 rounded-xl bg-[rgb(var(--bg-muted))] p-3 text-xs">
-                    <p className="font-semibold">Recommendation: {analysis.recommendation}</p>
-                    <p className="mt-1 text-[rgb(var(--text-dim))]">{analysis.reasoning}</p>
-                    <p className="mt-1 text-[rgb(var(--text-dim))]">Confidence: {analysis.confidence}</p>
-                  </div>
-                ) : null}
+                    {analysis ? (
+                      <div className="mt-3 rounded-xl bg-[rgb(var(--bg-muted))] p-3 text-xs">
+                        <p className="font-semibold">Recommendation: {analysis.recommendation}</p>
+                        <p className="mt-1 text-[rgb(var(--text-dim))]">{analysis.reasoning}</p>
+                        <p className="mt-1 text-[rgb(var(--text-dim))]">Confidence: {analysis.confidence}</p>
+                      </div>
+                    ) : null}
 
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg bg-[rgb(var(--primary))] px-2 py-1 text-xs font-semibold text-white"
-                    onClick={() =>
-                      void api.decisions
-                        .choose(decision.id, { chosen_option: String((decision.options[0] || {}).name || "") })
-                        .then(load)
-                    }
-                  >
-                    Select top option
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-[rgb(var(--border))] px-2 py-1 text-xs"
-                    onClick={() =>
-                      void api.decisions
-                        .outcome(decision.id, { outcome_notes: "Decision completed", outcome_rating: 7 })
-                        .then(load)
-                    }
-                  >
-                    Mark completed
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-          {activeDecisions.length === 0 ? <div className="card p-6 text-sm text-[rgb(var(--text-dim))]">No active decisions.</div> : null}
-        </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg bg-[rgb(var(--primary))] px-2 py-1 text-xs font-semibold text-white"
+                        onClick={() =>
+                          void api.decisions
+                            .choose(decision.id, { chosen_option: String((decision.options[0] || {}).name || "") })
+                            .then(load)
+                        }
+                      >
+                        Select top option
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-[rgb(var(--border))] px-2 py-1 text-xs"
+                        onClick={() =>
+                          void api.decisions
+                            .outcome(decision.id, { outcome_notes: "Decision completed", outcome_rating: 7 })
+                            .then(load)
+                        }
+                      >
+                        Mark completed
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {activeDecisions.length === 0 ? <div className="card p-6 text-sm text-[rgb(var(--text-dim))]">No active decisions.</div> : null}
+            </div>
 
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Decision timeline</h2>
-          <div className="space-y-2">
-            {timeline.map((item, index) => (
-              <article key={`${item.title}-${index}`} className="card p-4">
-                <p className="text-xs uppercase tracking-widest text-[rgb(var(--text-dim))]">{item.at}</p>
-                <h3 className="mt-1 text-sm font-semibold">{item.title}</h3>
-                <p className="mt-1 text-xs text-[rgb(var(--text-dim))]">{item.subtitle}</p>
-              </article>
-            ))}
-            {timeline.length === 0 ? <div className="card p-6 text-sm text-[rgb(var(--text-dim))]">No completed decisions yet.</div> : null}
-          </div>
-        </div>
+            <div className="space-y-3">
+              <h2 className="text-lg font-semibold">Decision timeline</h2>
+              <div className="space-y-2">
+                {timeline.map((item, index) => (
+                  <article key={`${item.title}-${index}`} className="card p-4">
+                    <p className="text-xs uppercase tracking-widest text-[rgb(var(--text-dim))]">{item.at}</p>
+                    <h3 className="mt-1 text-sm font-semibold">{item.title}</h3>
+                    <p className="mt-1 text-xs text-[rgb(var(--text-dim))]">{item.subtitle}</p>
+                  </article>
+                ))}
+                {timeline.length === 0 ? <div className="card p-6 text-sm text-[rgb(var(--text-dim))]">No completed decisions yet.</div> : null}
+              </div>
+            </div>
+          </>
+        )}
       </section>
 
       <Modal

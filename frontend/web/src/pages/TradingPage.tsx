@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pie, PieChart, ResponsiveContainer, Cell, Tooltip } from "recharts";
 import { BrainCog, Plus, Trash2 } from "lucide-react";
 
+import EmptyStatePanel from "../components/EmptyStatePanel";
 import { api } from "../services/api";
 import { PortfolioSummary, Trade } from "../types/api";
 
@@ -64,6 +65,20 @@ export default function TradingPage() {
         <h1 className="text-2xl font-bold">Trading Dashboard</h1>
         <p className="text-sm text-[rgb(var(--text-dim))]">Watchlist, portfolio analytics, and trade intelligence.</p>
       </header>
+
+      {watchlist.length === 0 && trades.length === 0 ? (
+        <EmptyStatePanel
+          title="No Trading Data Yet"
+          description="This section tracks watchlists, logs trades, and surfaces risk-aware analytics."
+          ctaLabel="Log your first trade setup"
+          onCta={() =>
+            void api.trading
+              .addWatchlist({ symbol: symbol || "NIFTY50", exchange, asset_type: "equity" })
+              .then(load)
+          }
+          moduleKey="trading"
+        />
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-3">
         <article className="card p-4 lg:col-span-2">

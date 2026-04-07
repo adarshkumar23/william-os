@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pie, PieChart, ResponsiveContainer, Cell, Tooltip } from "recharts";
 import { Plus, TriangleAlert } from "lucide-react";
 
+import EmptyStatePanel from "../components/EmptyStatePanel";
 import MedicineCard from "../components/MedicineCard";
 import Modal from "../components/Modal";
 import { api } from "../services/api";
@@ -115,18 +116,25 @@ export default function MedicinePage() {
 
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
-          {medicines.map((medicine) => (
-            <MedicineCard
-              key={medicine.id}
-              medicine={medicine}
-              nextDue={reminderMap.get(medicine.name)}
-              onTake={onTake}
-              onSkip={onSkip}
-            />
-          ))}
           {medicines.length === 0 ? (
-            <div className="card p-6 text-sm text-[rgb(var(--text-dim))]">No active medicines.</div>
-          ) : null}
+            <EmptyStatePanel
+              title="No Medicines Added"
+              description="This section tracks adherence trends, upcoming doses, and refill risk." 
+              ctaLabel="Log your first medicine"
+              onCta={() => setOpenAdd(true)}
+              moduleKey="medicine"
+            />
+          ) : (
+            medicines.map((medicine) => (
+              <MedicineCard
+                key={medicine.id}
+                medicine={medicine}
+                nextDue={reminderMap.get(medicine.name)}
+                onTake={onTake}
+                onSkip={onSkip}
+              />
+            ))
+          )}
         </div>
 
         <article className="card p-4">

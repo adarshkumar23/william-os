@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.intelligence.schemas import CrossModuleRuleCreate
 from app.modules.intelligence.service import IntelligenceService, LifeScoreService
+from app.modules.intelligence.warnings_service import PredictiveWarningService
 from app.shared.types import success
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,3 +81,23 @@ async def get_life_score_history(
     service = LifeScoreService(db)
     history = await service.get_score_history(user_id=user_id, days=days)
     return success([item.model_dump(mode="json") for item in history])
+
+
+@router.get("/warnings")
+async def get_predictive_warnings(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    warnings = await service.get_active_warnings(user_id=user_id)
+    return success([item.model_dump(mode="json") for item in warnings])
+
+
+@router.post("/warnings/scan")
+async def scan_predictive_warnings(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    warnings = await service.scan_user(user_id=user_id)
+    return success([item.model_dump(mode="json") for item in warnings])

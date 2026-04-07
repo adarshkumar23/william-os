@@ -9,10 +9,14 @@ import json
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
+from time import perf_counter
 
 import httpx
 import structlog
 from app.core.config import get_settings
+from app.core.events import Event, EventType, event_bus
+from app.core.metrics import observe_ai_call
+from app.modules.memory.service import MemoryService
 from app.modules.decisions.models import Decision, DecisionTemplate
 from app.modules.decisions.schemas import (
     DecisionAnalysis,
@@ -84,14 +88,15 @@ class DecisionService:
         decision.status = "analyzing"
 
         analysis = await self._call_ai_analysis(
-            {
+            user_id=user_id,
+            payload={
                 "title": decision.title,
                 "description": decision.description,
                 "type": decision.decision_type,
                 "options": decision.options,
                 "criteria": decision.criteria,
                 "deadline": str(decision.deadline) if decision.deadline else None,
-            }
+            },
         )
         if analysis is None:
             analysis = self._fallback_analysis(decision.options, decision.criteria)
@@ -133,6 +138,19 @@ class DecisionService:
         decision.status = "reviewed"
         await self.db.flush()
         await self.db.refresh(decision)
+
+        await event_bus.publish(
+            Event(
+                type=EventType.DECISION_COMPLETED_WITH_OUTCOME,
+                data={
+                    "decision_id": str(decision.id),
+                    "decision_type": decision.decision_type,
+                    "outcome_rating": decision.outcome_rating,
+                },
+                user_id=user_id,
+            )
+        )
+
         return DecisionResponse.model_validate(decision)
 
     async def get_decision_quality(self, user_id: uuid.UUID) -> DecisionStats:
@@ -232,15 +250,22 @@ class DecisionService:
             raise NotFoundError("Decision", str(decision_id))
         return decision
 
-    async def _call_ai_analysis(self, payload: dict) -> DecisionAnalysis | None:
+    async def _call_ai_analysis(self, user_id: uuid.UUID, payload: dict) -> DecisionAnalysis | None:
         api_key = self.settings.openrouter_api_key.get_secret_value()
         if not api_key:
             return None
 
+        memory_context = await MemoryService(self.db).get_relevant_memory_context(
+            user_id=user_id,
+            modules=["decisions", "sleep", "journal", "trading"],
+            limit=6,
+        )
+
         prompt = (
-            "Analyze this decision payload and return JSON with keys: scores (object of option->score), "
+            "Analyze this decision payload and return JSON with keys: "
+            "scores (object of option->score), "
             "recommendation, reasoning, confidence, risk_factors (array). Payload: "
-            f"{json.dumps(payload)}"
+            f"{json.dumps(payload)}. Memory context: {memory_context}"
         )
         body = {
             "model": self.settings.openrouter_model,
@@ -258,6 +283,7 @@ class DecisionService:
             "X-Title": self.settings.app_name,
         }
 
+        started = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -266,6 +292,7 @@ class DecisionService:
                     headers=headers,
                 )
                 response.raise_for_status()
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             content = response.json()["choices"][0]["message"]["content"].strip()
             cleaned = content.replace("```json", "").replace("```", "").strip()
             parsed = json.loads(cleaned)
@@ -279,6 +306,7 @@ class DecisionService:
                 risk_factors=parsed.get("risk_factors") or [],
             )
         except Exception as exc:
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             logger.warning("decision_analysis_ai_failed", error=str(exc))
             return None
 

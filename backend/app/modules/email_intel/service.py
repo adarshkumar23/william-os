@@ -14,6 +14,7 @@ import httpx
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
+from app.core.metrics import observe_ai_call
 from app.core.security import encrypt_text
 from app.modules.email_intel.models import EmailAccount, EmailSummary
 from app.modules.email_intel.schemas import (
@@ -256,6 +257,7 @@ class EmailIntelService:
             "X-Title": self.settings.app_name,
         }
 
+        started = time.perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -265,6 +267,7 @@ class EmailIntelService:
                 )
                 response.raise_for_status()
             data = response.json()
+            observe_ai_call(provider="openrouter", duration_seconds=time.perf_counter() - started)
             content = data["choices"][0]["message"]["content"].strip()
             parsed = json.loads(content)
             if not isinstance(parsed, dict):
@@ -276,6 +279,7 @@ class EmailIntelService:
                 "action_items": parsed.get("action_items") or [],
             }
         except Exception as exc:
+            observe_ai_call(provider="openrouter", duration_seconds=time.perf_counter() - started)
             logger.warning("email_summary_generation_failed", error=str(exc))
             return self._fallback_summary(subjects)
 

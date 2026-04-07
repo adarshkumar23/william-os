@@ -8,11 +8,13 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from time import perf_counter
 
 import httpx
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
+from app.core.metrics import observe_ai_call
 from app.modules.fitness.models import EnergyForecast, FitnessDevice, HealthMetric, WorkoutLog
 from app.modules.fitness.schemas import (
     DailyHealthSummary,
@@ -97,6 +99,20 @@ class FitnessService:
         self.db.add(workout)
         await self.db.flush()
         await self.db.refresh(workout)
+
+        await event_bus.publish(
+            Event(
+                type=EventType.WORKOUT_LOGGED,
+                data={
+                    "workout_id": str(workout.id),
+                    "duration_minutes": workout.duration_minutes,
+                    "workout_type": workout.workout_type,
+                    "workout_date": str(workout.workout_date),
+                },
+                user_id=user_id,
+            )
+        )
+
         return WorkoutLogResponse.model_validate(workout)
 
     async def list_workouts(
@@ -376,6 +392,7 @@ class FitnessService:
             "X-Title": self.settings.app_name,
         }
 
+        started = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -385,6 +402,8 @@ class FitnessService:
                 )
                 response.raise_for_status()
 
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
+
             content = response.json()["choices"][0]["message"]["content"].strip()
             parsed = self._extract_json(content)
             if parsed is None:
@@ -392,6 +411,7 @@ class FitnessService:
             parsed["generated_by"] = self.settings.openrouter_model
             return parsed
         except Exception as exc:
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             logger.warning("energy_forecast_ai_failed", error=str(exc))
             return None
 

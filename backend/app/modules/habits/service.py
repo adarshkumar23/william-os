@@ -132,6 +132,7 @@ class HabitsService:
                         "habit_id": str(habit.id),
                         "habit_name": habit.name,
                         "date": str(check_in.check_date),
+                        "current_streak": habit.current_streak,
                     },
                     user_id=user_id,
                 )

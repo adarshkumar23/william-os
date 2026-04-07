@@ -49,7 +49,9 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_secret: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     failed_login_attempts: Mapped[int] = mapped_column(default=0)
+    permission_scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
 
     # Journal vault passphrase hash (separate from login password)
     journal_passphrase_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -95,3 +97,21 @@ class RefreshTokenBlacklist(Base):
 
     jti: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(nullable=False)
+
+
+class LoginHistory(Base):
+    __tablename__ = "login_history"
+    __table_args__ = {"schema": "auth"}
+
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    device_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(nullable=False, index=True)

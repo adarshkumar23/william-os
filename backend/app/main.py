@@ -19,12 +19,14 @@ from app.core.config import get_settings
 from app.core.database import close_db, init_db
 from app.core.logging import setup_logging
 from app.core.middleware import RequestTimingMiddleware, SecurityHeadersMiddleware
-from app.core.observability import setup_metrics, setup_sentry
+from app.core.observability import setup_metrics, setup_sentry, setup_tracing
 from app.core.offline import OfflineFallbackMiddleware
+from app.core.permissions import ScopeEnforcementMiddleware
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.sync import register_sync_broadcaster
 from app.core.websocket import register_websocket_routes
 from app.modules.audit.service import register_audit_handlers
+from app.modules.gamification.service import register_gamification_handlers
 from app.shared.types import (
     AuthenticationError,
     AuthorizationError,
@@ -55,6 +57,7 @@ async def lifespan(app: FastAPI):
 
     # Register event handlers
     register_audit_handlers()
+    register_gamification_handlers()
     register_sync_broadcaster()
 
     logger.info("william_os_ready")
@@ -87,12 +90,14 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(SecurityHeadersMiddleware, is_production=settings.is_production)
+    app.add_middleware(ScopeEnforcementMiddleware)
     app.add_middleware(RequestTimingMiddleware)
     app.add_middleware(OfflineFallbackMiddleware)
     app.add_middleware(RateLimitMiddleware)
 
     app.state.degraded_mode = False
     app.state.degraded_reason = None
+    setup_tracing(app, settings)
 
     # ── Exception Handlers ───────────────────────────────────
     @app.exception_handler(WilliamError)
@@ -141,6 +146,7 @@ def create_app() -> FastAPI:
 
     # ── Routes ───────────────────────────────────────────────
     register_routes(app)
+    register_gamification_handlers()
     register_websocket_routes(app)
     setup_metrics(app, enabled=settings.metrics_enabled)
 
@@ -161,18 +167,25 @@ def create_app() -> FastAPI:
 
 def register_routes(app: FastAPI) -> None:
     """Register all module routers under /api/v1."""
+    from app.modules.agents.routes import router as agents_router  # noqa: I001
     from app.modules.auth.routes import router as auth_router
+    from app.modules.briefing.routes import router as briefing_router
     from app.modules.decisions.routes import router as decisions_router
     from app.modules.email_intel.routes import router as email_router
     from app.modules.experiments.routes import router as experiments_router
     from app.modules.export.routes import router as export_router
+    from app.modules.feed.routes import router as feed_router
     from app.modules.fitness.routes import router as fitness_router
+    from app.modules.gamification.routes import router as gamification_router
     from app.modules.habits.routes import router as habits_router
     from app.modules.intelligence.routes import router as intelligence_router
     from app.modules.journal.routes import router as journal_router
+    from app.modules.memory.routes import router as memory_router
     from app.modules.medicine.routes import router as medicine_router
     from app.modules.messaging.routes import router as messaging_router
+    from app.modules.rules.routes import router as rules_router
     from app.modules.scheduler.routes import router as scheduler_router
+    from app.modules.secrets.routes import router as secrets_router
     from app.modules.sleep.routes import router as sleep_router
     from app.modules.study.routes import router as study_router
     from app.modules.trading.routes import router as trading_router
@@ -180,14 +193,21 @@ def register_routes(app: FastAPI) -> None:
 
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=prefix)
+    app.include_router(agents_router, prefix=prefix)
+    app.include_router(briefing_router, prefix=prefix)
     app.include_router(scheduler_router, prefix=prefix)
     app.include_router(habits_router, prefix=prefix)
+    app.include_router(gamification_router, prefix=prefix)
+    app.include_router(feed_router, prefix=prefix)
     app.include_router(intelligence_router, prefix=prefix)
     app.include_router(fitness_router, prefix=prefix)
     app.include_router(journal_router, prefix=prefix)
+    app.include_router(memory_router, prefix=prefix)
     app.include_router(medicine_router, prefix=prefix)
     app.include_router(email_router, prefix=prefix)
     app.include_router(messaging_router, prefix=prefix)
+    app.include_router(secrets_router, prefix=prefix)
+    app.include_router(rules_router, prefix=prefix)
     app.include_router(voice_router, prefix=prefix)
     app.include_router(study_router, prefix=prefix)
     app.include_router(trading_router, prefix=prefix)

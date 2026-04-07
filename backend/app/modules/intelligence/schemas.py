@@ -76,3 +76,19 @@ class LifeScoreResponse(BaseModel):
 class LifeScoreHistoryPoint(BaseModel):
     score: float
     computed_at: datetime
+
+
+class PredictiveWarningResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    warning_type: str
+    severity: str
+    explanation: str
+    recommended_action: str
+    details: dict
+    is_active: bool
+    detected_at: datetime
+    resolved_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

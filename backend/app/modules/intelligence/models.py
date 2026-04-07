@@ -66,3 +66,28 @@ class LifeScore(Base):
         server_default=func.now(),
         index=True,
     )
+
+
+class PredictiveWarning(Base):
+    __tablename__ = "predictive_warnings"
+    __table_args__ = {"schema": "intelligence"}
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    warning_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    recommended_action: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[dict] = mapped_column(JSONB, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -5,12 +5,13 @@ Telegram linking and outbound notification delivery.
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
 from app.core.config import get_settings
+from app.core.metrics import increment_notification_delivery
 from app.modules.messaging.models import NotificationLog, TelegramUser
 from app.modules.messaging.schemas import (
     NotificationLogResponse,
@@ -18,7 +19,11 @@ from app.modules.messaging.schemas import (
     TelegramLinkResponse,
 )
 from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -30,7 +35,7 @@ class MessagingService:
 
     async def link_telegram(
         self,
-        user_id: uuid.UUID,
+        user_id: UUID,
         chat_id: int,
         username: str,
     ) -> TelegramLinkResponse:
@@ -72,7 +77,7 @@ class MessagingService:
         )
         return TelegramLinkResponse.model_validate(user_link)
 
-    async def unlink_telegram(self, user_id: uuid.UUID) -> None:
+    async def unlink_telegram(self, user_id: UUID) -> None:
         existing = await self.db.execute(
             select(TelegramUser).where(TelegramUser.user_id == user_id)
         )
@@ -87,7 +92,7 @@ class MessagingService:
 
         logger.info("telegram_unlinked", user_id=str(user_id))
 
-    async def get_telegram_user(self, user_id: uuid.UUID) -> TelegramLinkResponse | None:
+    async def get_telegram_user(self, user_id: UUID) -> TelegramLinkResponse | None:
         result = await self.db.execute(
             select(TelegramUser).where(
                 and_(
@@ -104,7 +109,7 @@ class MessagingService:
 
     async def send_notification(
         self,
-        user_id: uuid.UUID,
+        user_id: UUID,
         payload: NotificationPayload,
     ) -> NotificationLogResponse:
         telegram_user = await self.get_telegram_user(user_id)
@@ -139,11 +144,41 @@ class MessagingService:
             delivered=delivered,
             error=error_text,
         )
+        increment_notification_delivery(
+            channel="telegram",
+            status="delivered" if delivered else "failed",
+        )
+        return NotificationLogResponse.model_validate(log)
+
+    async def send_in_app_notification(
+        self,
+        user_id: UUID,
+        payload: NotificationPayload,
+    ) -> NotificationLogResponse:
+        log = NotificationLog(
+            user_id=user_id,
+            channel="in_app",
+            notification_type=payload.notification_type,
+            payload=payload.model_dump(mode="json"),
+            sent_at=datetime.now(UTC),
+            delivered=True,
+            error=None,
+        )
+        self.db.add(log)
+        await self.db.flush()
+        await self.db.refresh(log)
+
+        logger.info(
+            "in_app_notification_logged",
+            user_id=str(user_id),
+            notification_type=payload.notification_type,
+        )
+        increment_notification_delivery(channel="in_app", status="delivered")
         return NotificationLogResponse.model_validate(log)
 
     async def send_morning_briefing(
         self,
-        user_id: uuid.UUID,
+        user_id: UUID,
         briefing_data: dict,
     ) -> NotificationLogResponse:
         top_priorities = briefing_data.get("top_priorities", [])
@@ -163,7 +198,7 @@ class MessagingService:
 
     async def send_medicine_reminder(
         self,
-        user_id: uuid.UUID,
+        user_id: UUID,
         reminder_data: dict,
     ) -> NotificationLogResponse:
         payload = NotificationPayload(
@@ -180,7 +215,7 @@ class MessagingService:
 
     async def send_procrastination_alert(
         self,
-        user_id: uuid.UUID,
+        user_id: UUID,
         signal_data: dict,
     ) -> NotificationLogResponse:
         missed = signal_data.get("missed_habits", [])
@@ -198,7 +233,7 @@ class MessagingService:
 
     async def get_notification_history(
         self,
-        user_id: uuid.UUID,
+        user_id: UUID,
         limit: int = 50,
         offset: int = 0,
     ) -> list[NotificationLogResponse]:

@@ -15,6 +15,8 @@ from typing import Any, Callable, Coroutine
 
 import structlog
 
+from app.core.metrics import increment_module_action
+
 logger = structlog.get_logger(__name__)
 
 
@@ -35,12 +37,19 @@ class EventType(str, Enum):
 
     # Health
     FITNESS_DATA_SYNCED = "fitness.data_synced"
+    WORKOUT_LOGGED = "fitness.workout_logged"
     SLEEP_DATA_RECORDED = "sleep.data_recorded"
     MEDICINE_TAKEN = "medicine.taken"
     MEDICINE_MISSED = "medicine.missed"
 
     # Journal
     JOURNAL_ENTRY_CREATED = "journal.entry_created"
+
+    # Study
+    STUDY_SESSION_COMPLETED = "study.session_completed"
+
+    # Decisions
+    DECISION_COMPLETED_WITH_OUTCOME = "decision.completed_with_outcome"
 
     # Email
     EMAIL_SUMMARY_READY = "email.summary_ready"
@@ -86,6 +95,9 @@ class EventBus:
 
     async def publish(self, event: Event) -> None:
         """Publish event to all matching handlers. Non-blocking."""
+        module_name, _, action_name = event.type.value.partition(".")
+        increment_module_action(module=module_name, action=action_name or "event")
+
         logger.info(
             "event_published",
             event_type=event.type.value,

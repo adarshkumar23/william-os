@@ -5,6 +5,7 @@ JWT tokens, password hashing, AES-256-GCM encryption for journal vault.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import uuid
@@ -127,3 +128,30 @@ def generate_device_fingerprint(user_agent: str, ip: str) -> str:
     """Deterministic device fingerprint for multi-device tracking."""
     raw = f"{user_agent}:{ip}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def hash_token(token: str) -> str:
+    """Stable SHA-256 hash for token lookup without storing raw token text."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _master_key() -> bytes:
+    seed = settings.encryption_master_salt.get_secret_value().encode("utf-8")
+    return hashlib.sha256(seed).digest()
+
+
+def encrypt_api_secret(plaintext: str) -> str:
+    """Encrypt API keys with app-level AES-256-GCM and return urlsafe payload."""
+    nonce = os.urandom(12)
+    aesgcm = AESGCM(_master_key())
+    ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
+    return base64.urlsafe_b64encode(nonce + ciphertext).decode("utf-8")
+
+
+def decrypt_api_secret(payload: str) -> str:
+    """Decrypt API key payload created by encrypt_api_secret."""
+    raw = base64.urlsafe_b64decode(payload.encode("utf-8"))
+    nonce, ciphertext = raw[:12], raw[12:]
+    aesgcm = AESGCM(_master_key())
+    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+    return plaintext.decode("utf-8")

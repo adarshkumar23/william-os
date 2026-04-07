@@ -9,10 +9,12 @@ import json
 import uuid
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
+from time import perf_counter
 
 import httpx
 import structlog
 from app.core.config import get_settings
+from app.core.metrics import observe_ai_call
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist
 from app.modules.trading.schemas import (
     PortfolioSnapshotResponse,
@@ -453,6 +455,7 @@ class TradingService:
             "X-Title": self.settings.app_name,
         }
 
+        started = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -462,6 +465,8 @@ class TradingService:
                 )
                 response.raise_for_status()
 
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
+
             return (
                 response.json()
                 .get("choices", [{}])[0]
@@ -469,6 +474,7 @@ class TradingService:
                 .get("content", "No analysis generated.")
             )
         except Exception as exc:
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             logger.warning("trading_ai_analysis_failed", error=str(exc))
             return "AI analysis temporarily unavailable."
 

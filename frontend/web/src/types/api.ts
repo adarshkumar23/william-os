@@ -5,6 +5,13 @@ export type ApiEnvelope<T> = {
   meta?: Record<string, unknown>;
 };
 
+export type CursorPage<T> = {
+  items: T[];
+  next_cursor: string | null;
+  has_more: boolean;
+  total?: number | null;
+};
+
 export type AnyRecord = Record<string, unknown>;
 
 export type UserProfile = {
@@ -23,6 +30,42 @@ export type AuthTokens = {
   access_token: string;
   refresh_token?: string;
   expires_in: number;
+};
+
+export type TotpSetupPayload = {
+  otp_auth_url: string;
+  qr_code_data_url: string;
+  secret_preview: string;
+};
+
+export type SessionDevice = {
+  id: string;
+  device_name: string;
+  device_type: string;
+  device_fingerprint: string;
+  last_active: string | null;
+  is_active: boolean;
+  created_at: string;
+  is_current: boolean;
+};
+
+export type LoginHistoryItem = {
+  id: string;
+  ip: string | null;
+  country: string | null;
+  device_fingerprint: string;
+  user_agent: string | null;
+  success: boolean;
+  timestamp: string;
+};
+
+export type SecretMetadata = {
+  id: string;
+  provider: string;
+  key_hint: string;
+  version: number;
+  is_active: boolean;
+  rotated_at: string;
 };
 
 export type ScheduleBlock = {
@@ -183,6 +226,205 @@ export type LifeScoreHistoryPoint = {
   computed_at: string;
 };
 
+export type BriefingScheduleItem = {
+  id: string;
+  title: string;
+  category: string;
+  start_time: string;
+  end_time: string;
+  priority: number;
+  status: string;
+};
+
+export type BriefingHabitItem = {
+  id: string;
+  name: string;
+  preferred_time?: string | null;
+  current_streak: number;
+};
+
+export type BriefingMedicineMissItem = {
+  medicine_name: string;
+  log_date: string;
+  scheduled_time: string;
+  skip_reason?: string | null;
+};
+
+export type BriefingDeadlineItem = {
+  source: string;
+  title: string;
+  due_date: string;
+  detail?: string | null;
+};
+
+export type BriefingEnergyPrediction = {
+  peak_hours: string[];
+  low_hours: string[];
+  suggestions: string[];
+  generated_by?: string | null;
+};
+
+export type BriefingLifeScore = {
+  score: number;
+  component_scores: Record<string, number>;
+  explanation: string;
+  computed_at: string;
+};
+
+export type MorningBriefing = {
+  generated_at: string;
+  sleep_quality: Record<string, unknown>;
+  today_schedule: BriefingScheduleItem[];
+  priority_habits: BriefingHabitItem[];
+  missed_medicines: BriefingMedicineMissItem[];
+  upcoming_deadlines: BriefingDeadlineItem[];
+  market_watchlist_movement: {
+    watchlist_count?: number;
+    top_gainers?: Array<Record<string, unknown>>;
+    top_losers?: Array<Record<string, unknown>>;
+  };
+  energy_prediction: BriefingEnergyPrediction | null;
+  life_score: BriefingLifeScore;
+  ai_recommendation_of_day: string;
+};
+
+export type MorningBriefingSendResult = {
+  briefing: MorningBriefing;
+  telegram: NotificationItem;
+  in_app: NotificationItem;
+};
+
+export type GamificationXPEvent = {
+  id: string;
+  user_id: string;
+  source_module: string;
+  action: string;
+  xp_earned: number;
+  earned_at: string;
+};
+
+export type GamificationRecord = {
+  id: string;
+  user_id: string;
+  record_type: string;
+  value: number;
+  achieved_at: string;
+};
+
+export type GamificationWeeklyMomentum = {
+  id: string;
+  user_id: string;
+  week_start: string;
+  momentum_score: number;
+  discipline_debt: number;
+  focus_rank: number;
+};
+
+export type GamificationLevelProgress = {
+  level: number;
+  total_xp: number;
+  current_level_xp_floor: number;
+  next_level_xp_target: number;
+  xp_to_next_level: number;
+  progress_pct: number;
+};
+
+export type GamificationProfile = {
+  level_progress: GamificationLevelProgress;
+  weekly_momentum: GamificationWeeklyMomentum;
+  records: GamificationRecord[];
+  recent_xp_events: GamificationXPEvent[];
+};
+
+export type ActivityFeedItem = {
+  event_id: string;
+  timestamp: string;
+  module: string;
+  action: string;
+  summary: string;
+  icon_key: string;
+  xp_earned?: number | null;
+};
+
+export type PredictiveWarning = {
+  id: string;
+  user_id: string;
+  warning_type: string;
+  severity: "low" | "medium" | "high" | "critical" | string;
+  explanation: string;
+  recommended_action: string;
+  details: Record<string, unknown>;
+  is_active: boolean;
+  detected_at: string;
+  resolved_at?: string | null;
+};
+
+export type AgentStatus = {
+  id: string;
+  user_id: string;
+  agent_name: string;
+  description: string;
+  status: string;
+  last_recommendation: Record<string, unknown>;
+  last_action: Record<string, unknown>;
+  last_run_at: string;
+};
+
+export type AgentRecommendationLog = {
+  id: string;
+  user_id: string;
+  agent_name: string;
+  severity: string;
+  urgency: number;
+  recommendation: Record<string, unknown>;
+  status: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type UserRule = {
+  id: string;
+  user_id: string;
+  name: string;
+  trigger_module: string;
+  trigger_condition: Record<string, unknown>;
+  action_module: string;
+  action_type: string;
+  action_params: Record<string, unknown>;
+  is_active: boolean;
+  last_triggered?: string | null;
+  created_at: string;
+};
+
+export type RuleTemplate = {
+  name: string;
+  trigger_module: string;
+  trigger_condition: Record<string, unknown>;
+  action_module: string;
+  action_type: string;
+  action_params: Record<string, unknown>;
+};
+
+export type RuleEvaluationLog = {
+  id: string;
+  user_id: string;
+  rule_id: string;
+  matched: boolean;
+  action_success: boolean;
+  context_snapshot: Record<string, unknown>;
+  action_result: Record<string, unknown>;
+  error?: string | null;
+  executed_at: string;
+  created_at: string;
+};
+
+export type RuleEvaluationResult = {
+  evaluated: number;
+  matched: number;
+  executed: number;
+  logs: RuleEvaluationLog[];
+};
+
 export type Trade = {
   id: string;
   symbol: string;
@@ -257,6 +499,7 @@ export type DecisionAnalysis = {
 
 export type NotificationItem = {
   id: string;
+  channel?: string;
   notification_type: string;
   sent_at: string;
   delivered: boolean;

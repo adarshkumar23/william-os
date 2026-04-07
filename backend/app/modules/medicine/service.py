@@ -143,6 +143,11 @@ class MedicineService:
         await self.db.refresh(log)
 
         if taken:
+            scheduled_dt = datetime.combine(log_date, scheduled_time, tzinfo=UTC)
+            taken_dt = datetime.combine(log_date, taken_at, tzinfo=UTC) if taken_at else scheduled_dt
+            delta_minutes = (taken_dt - scheduled_dt).total_seconds() / 60.0
+            is_on_time = abs(delta_minutes) <= 30.0
+
             await event_bus.publish(
                 Event(
                     type=EventType.MEDICINE_TAKEN,
@@ -151,6 +156,8 @@ class MedicineService:
                         "medicine_name": medicine.name,
                         "log_date": str(log_date),
                         "scheduled_time": scheduled_time.isoformat(),
+                        "taken_at": taken_at.isoformat() if taken_at else None,
+                        "is_on_time": is_on_time,
                     },
                     user_id=user_id,
                 )

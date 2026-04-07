@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import {
   AlarmClock,
+  AlertTriangle,
   CalendarClock,
   CheckCircle2,
   Flame,
@@ -8,16 +9,33 @@ import {
   Sparkles,
   Stethoscope,
   WandSparkles,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import ActivityFeed from "../components/ActivityFeed";
+import AgentsPanel from "../components/AgentsPanel";
 import Modal from "../components/Modal";
 import LifeScoreCard from "../components/LifeScoreCard";
+import MorningBriefingCard from "../components/MorningBriefingCard";
+import GamificationPanel from "../components/GamificationPanel";
 import StatCard from "../components/StatCard";
 import TimelineBlock from "../components/TimelineBlock";
 import { useCountdown } from "../hooks/useCountdown";
 import { api } from "../services/api";
-import { DailyPlan, Habit, LifeScore, LifeScoreHistoryPoint, MedicineReminder } from "../types/api";
+import {
+  ActivityFeedItem,
+  AgentRecommendationLog,
+  AgentStatus,
+  DailyPlan,
+  GamificationProfile,
+  Habit,
+  LifeScore,
+  LifeScoreHistoryPoint,
+  MedicineReminder,
+  MorningBriefing,
+  PredictiveWarning,
+} from "../types/api";
 
 function toReminderDate(reminder?: MedicineReminder) {
   if (!reminder) {
@@ -40,6 +58,17 @@ export default function DashboardPage() {
   const [energyForecast, setEnergyForecast] = useState<Record<string, unknown> | null>(null);
   const [lifeScore, setLifeScore] = useState<LifeScore | null>(null);
   const [lifeScoreHistory, setLifeScoreHistory] = useState<LifeScoreHistoryPoint[]>([]);
+  const [gamificationProfile, setGamificationProfile] = useState<GamificationProfile | null>(null);
+  const [activityFeedItems, setActivityFeedItems] = useState<ActivityFeedItem[]>([]);
+  const [activityFeedCursor, setActivityFeedCursor] = useState<string | null>(null);
+  const [activityFeedHasMore, setActivityFeedHasMore] = useState(false);
+  const [activityFeedLoadingMore, setActivityFeedLoadingMore] = useState(false);
+  const [briefing, setBriefing] = useState<MorningBriefing | null>(null);
+  const [briefingSending, setBriefingSending] = useState(false);
+  const [warnings, setWarnings] = useState<PredictiveWarning[]>([]);
+  const [dismissedWarningIds, setDismissedWarningIds] = useState<string[]>([]);
+  const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([]);
+  const [agentRecommendations, setAgentRecommendations] = useState<AgentRecommendationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -49,13 +78,32 @@ export default function DashboardPage() {
     setLoading(true);
     setError("");
     try {
-      const [todayPlan, habitList, upcoming, energy, score, scoreHistory] = await Promise.all([
+      const [
+        todayPlan,
+        habitList,
+        upcoming,
+        energy,
+        score,
+        scoreHistory,
+        todayBriefing,
+        profile,
+        feedPage,
+        warningRows,
+        statuses,
+        recommendations,
+      ] = await Promise.all([
         api.scheduler.today().catch(() => null),
         api.habits.list({ active_only: true, limit: 100, offset: 0 }),
         api.medicine.upcoming(180).catch(() => []),
         api.fitness.energyByDate(format(new Date(), "yyyy-MM-dd")).catch(() => null),
         api.intelligence.lifeScore().catch(() => null),
         api.intelligence.lifeScoreHistory(30).catch(() => []),
+        api.briefing.today().catch(() => null),
+        api.gamification.profile().catch(() => null),
+        api.feed.list({ limit: 20 }).catch(() => null),
+        api.intelligence.warnings().catch(() => []),
+        api.agents.status().catch(() => []),
+        api.agents.recommendations({ limit: 12 }).catch(() => []),
       ]);
       setPlan(todayPlan);
       setHabits(habitList);
@@ -63,6 +111,14 @@ export default function DashboardPage() {
       setEnergyForecast(energy);
       setLifeScore(score);
       setLifeScoreHistory(scoreHistory);
+      setBriefing(todayBriefing);
+      setGamificationProfile(profile);
+      setActivityFeedItems(feedPage?.items ?? []);
+      setActivityFeedCursor(feedPage?.next_cursor ?? null);
+      setActivityFeedHasMore(Boolean(feedPage?.has_more));
+      setWarnings(warningRows ?? []);
+      setAgentStatuses(statuses ?? []);
+      setAgentRecommendations(recommendations ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard");
     } finally {
@@ -116,8 +172,96 @@ export default function DashboardPage() {
     await load();
   };
 
+  const onSendBriefingNow = async () => {
+    setBriefingSending(true);
+    try {
+      const sent = await api.briefing.sendNow();
+      setBriefing(sent.briefing);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send morning briefing");
+    } finally {
+      setBriefingSending(false);
+    }
+  };
+
+  const onLoadMoreFeed = async () => {
+    if (activityFeedLoadingMore || !activityFeedHasMore || !activityFeedCursor) {
+      return;
+    }
+
+    setActivityFeedLoadingMore(true);
+    try {
+      const nextPage = await api.feed.list({
+        limit: 20,
+        before_cursor: activityFeedCursor,
+      });
+
+      setActivityFeedItems((previous) => {
+        const seen = new Set(previous.map((item) => item.event_id));
+        const incoming = nextPage.items.filter((item) => !seen.has(item.event_id));
+        return [...previous, ...incoming];
+      });
+      setActivityFeedCursor(nextPage.next_cursor ?? null);
+      setActivityFeedHasMore(Boolean(nextPage.has_more));
+    } catch {
+      setActivityFeedHasMore(false);
+    } finally {
+      setActivityFeedLoadingMore(false);
+    }
+  };
+
+  const visibleWarnings = warnings.filter((item) => !dismissedWarningIds.includes(item.id));
+
+  const warningTone = (severity: string) => {
+    if (severity === "critical") {
+      return "border-[rgb(var(--danger))] bg-red-500/10";
+    }
+    if (severity === "high") {
+      return "border-[rgb(var(--warning))] bg-orange-500/10";
+    }
+    if (severity === "medium") {
+      return "border-yellow-500/50 bg-yellow-500/10";
+    }
+    return "border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))]";
+  };
+
   return (
     <div className="grid gap-6 xl:grid-cols-5">
+      <section className="xl:col-span-5">
+        <MorningBriefingCard
+          briefing={briefing}
+          loading={loading}
+          sending={briefingSending}
+          onSendNow={onSendBriefingNow}
+        />
+      </section>
+
+      {visibleWarnings.length > 0 ? (
+        <section className="xl:col-span-5 space-y-2">
+          {visibleWarnings.map((warning) => (
+            <article key={warning.id} className={`rounded-xl border p-3 ${warningTone(warning.severity)}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide">{warning.warning_type.replace(/_/g, " ")}</p>
+                  <p className="mt-1 text-sm">
+                    <AlertTriangle className="mr-1 inline h-4 w-4" />
+                    {warning.explanation}
+                  </p>
+                  <p className="mt-1 text-xs text-[rgb(var(--text-dim))]">Recommended: {warning.recommended_action}</p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-lg border border-[rgb(var(--border))] p-1"
+                  onClick={() => setDismissedWarningIds((previous) => [...previous, warning.id])}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : null}
+
       <section className="xl:col-span-3">
         <div className="mb-4 flex items-center justify-between">
           <div>
@@ -163,7 +307,19 @@ export default function DashboardPage() {
       </section>
 
       <aside className="space-y-4 xl:col-span-2">
+        <GamificationPanel profile={gamificationProfile} loading={loading} />
+
         <LifeScoreCard lifeScore={lifeScore} history={lifeScoreHistory} loading={loading} />
+
+        <AgentsPanel statuses={agentStatuses} recommendations={agentRecommendations} loading={loading} />
+
+        <ActivityFeed
+          items={activityFeedItems}
+          loading={loading}
+          loadingMore={activityFeedLoadingMore}
+          hasMore={activityFeedHasMore}
+          onLoadMore={onLoadMoreFeed}
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <StatCard

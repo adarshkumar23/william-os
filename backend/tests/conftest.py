@@ -39,6 +39,11 @@ SCHEMA_TRANSLATE_MAP = {
     "decisions": None,
     "messaging": None,
     "intelligence": None,
+    "gamification": None,
+    "memory": None,
+    "agents": None,
+    "rules": None,
+    "security": None,
 }
 
 

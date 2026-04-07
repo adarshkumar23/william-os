@@ -121,6 +121,46 @@ class ExportService:
         await self._log_export(user_id, export_type="full")
         return self._to_zip_bytes(payload, filename="william_export_full.json")
 
+    async def export_audit_csv(self, user_id: uuid.UUID) -> bytes:
+        result = await self.db.execute(
+            select(AuditLog)
+            .where(AuditLog.user_id == user_id)
+            .order_by(AuditLog.created_at.desc())
+        )
+        rows = result.scalars().all()
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(
+            [
+                "timestamp",
+                "action",
+                "module",
+                "resource_type",
+                "resource_id",
+                "ip_address",
+                "user_agent",
+                "details",
+            ]
+        )
+
+        for row in rows:
+            writer.writerow(
+                [
+                    row.created_at.isoformat(),
+                    row.action.value,
+                    row.module,
+                    row.resource_type or "",
+                    row.resource_id or "",
+                    row.ip_address or "",
+                    row.user_agent or "",
+                    json.dumps(row.details or {}, ensure_ascii=False),
+                ]
+            )
+
+        await self._log_export(user_id, export_type="audit_csv")
+        return buffer.getvalue().encode("utf-8")
+
     async def export_lifetime(self, user_id: uuid.UUID, passphrase: str) -> bytes:
         payload = await self._build_full_payload(user_id)
         json_content = json.dumps(payload, indent=2, default=str)

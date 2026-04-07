@@ -33,6 +33,7 @@ class UserLogin(BaseModel):
     password: str
     device_name: str = "Unknown Device"
     device_type: str = "web"
+    totp_code: str | None = Field(default=None, min_length=6, max_length=8)
 
 
 class TokenResponse(BaseModel):
@@ -56,6 +57,8 @@ class UserProfile(BaseModel):
     wake_time: str
     sleep_time: str
     is_verified: bool
+    totp_enabled: bool
+    permission_scopes: list[str] = Field(default_factory=list)
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -71,3 +74,38 @@ class UserPreferencesUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class TotpSetupResponse(BaseModel):
+    otp_auth_url: str
+    qr_code_data_url: str
+    secret_preview: str
+
+
+class TotpVerifyRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=8)
+
+
+class SessionDeviceResponse(BaseModel):
+    id: UUID
+    device_name: str
+    device_type: str
+    device_fingerprint: str
+    last_active: datetime | None
+    is_active: bool
+    created_at: datetime
+    is_current: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class LoginHistoryResponse(BaseModel):
+    id: UUID
+    ip: str | None
+    country: str | None
+    device_fingerprint: str
+    user_agent: str | None
+    success: bool
+    timestamp: datetime
+
+    model_config = {"from_attributes": True}

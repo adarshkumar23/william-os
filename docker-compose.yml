@@ -119,6 +119,31 @@ services:
       - prometheus_data:/prometheus
     restart: unless-stopped
 
+  # ── Loki ─────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: william-loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./infra/monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+
+  # ── Promtail ────────────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: william-promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./infra/monitoring/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
   # ── Grafana ──────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
@@ -134,10 +159,12 @@ services:
       - ./infra/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards/json:ro
     depends_on:
       - prometheus
+      - loki
     restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
   prometheus_data:
+  loki_data:
   grafana_data:

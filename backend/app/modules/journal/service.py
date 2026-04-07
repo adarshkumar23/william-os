@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from time import perf_counter
 
 import httpx
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
+from app.core.metrics import observe_ai_call
 from app.core.security import decrypt_text, encrypt_text
 from app.modules.journal.models import JournalEntry, JournalMood
 from app.modules.journal.schemas import JournalCreate, JournalDecrypted, JournalMetadata
@@ -180,6 +182,7 @@ class JournalService:
             "X-Title": self.settings.app_name,
         }
 
+        started = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -190,11 +193,13 @@ class JournalService:
                 response.raise_for_status()
 
             data = response.json()
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             summary = data["choices"][0]["message"]["content"].strip()
             if not summary:
                 return self._fallback_summary(content)
             return summary
         except Exception as exc:
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             logger.warning("journal_summary_generation_failed", error=str(exc))
             return self._fallback_summary(content)
 

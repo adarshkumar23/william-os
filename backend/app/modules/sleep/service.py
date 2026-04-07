@@ -8,11 +8,14 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date, datetime, timedelta
+from time import perf_counter
 
 import httpx
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
+from app.core.metrics import observe_ai_call
+from app.modules.memory.service import MemoryService
 from app.modules.scheduler.service import SchedulerService
 from app.modules.sleep.models import SleepDebt, SleepRecommendation, SleepRecord
 from app.modules.sleep.schemas import (
@@ -59,7 +62,11 @@ class SleepService:
         await event_bus.publish(
             Event(
                 type=EventType.SLEEP_DATA_RECORDED,
-                data={"sleep_date": str(data.sleep_date), "duration_minutes": duration},
+                data={
+                    "sleep_date": str(data.sleep_date),
+                    "duration_minutes": duration,
+                    "sleep_quality": data.sleep_quality,
+                },
                 user_id=user_id,
             )
         )
@@ -192,7 +199,7 @@ class SleepService:
             "recent_workout_minutes": workout_minutes,
         }
 
-        ai_plan = await self._generate_ai_recommendation(factors=factors)
+        ai_plan = await self._generate_ai_recommendation(user_id=user_id, factors=factors)
         if ai_plan is None:
             ai_plan = self._fallback_recommendation(factors=factors)
 
@@ -319,16 +326,22 @@ class SleepService:
         avg_minutes = float(result.scalar() or 0.0)
         return round(avg_minutes / 60.0, 2)
 
-    async def _generate_ai_recommendation(self, factors: dict) -> dict | None:
+    async def _generate_ai_recommendation(self, user_id: uuid.UUID, factors: dict) -> dict | None:
         api_key = self.settings.openrouter_api_key.get_secret_value()
         if not api_key:
             return None
+
+        memory_context = await MemoryService(self.db).get_relevant_memory_context(
+            user_id=user_id,
+            modules=["sleep", "fitness", "study"],
+            limit=6,
+        )
 
         prompt = (
             "Given these sleep and lifestyle factors, return JSON with keys: "
             "recommended_bedtime, recommended_wake_time, recommended_duration_minutes, "
             "reasoning, confidence. Factors: "
-            f"{json.dumps(factors)}"
+            f"{json.dumps(factors)}. Memory context: {memory_context}"
         )
         payload = {
             "model": self.settings.openrouter_model,
@@ -346,6 +359,7 @@ class SleepService:
             "X-Title": self.settings.app_name,
         }
 
+        started = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -355,12 +369,14 @@ class SleepService:
                 )
                 response.raise_for_status()
 
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             content = response.json()["choices"][0]["message"]["content"].strip()
             cleaned = content.replace("```json", "").replace("```", "").strip()
             parsed = json.loads(cleaned)
             if isinstance(parsed, dict):
                 return parsed
         except Exception as exc:
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             logger.warning("sleep_recommendation_ai_failed", error=str(exc))
         return None
 
@@ -410,6 +426,7 @@ class SleepService:
             "X-Title": self.settings.app_name,
         }
 
+        started = perf_counter()
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -418,8 +435,10 @@ class SleepService:
                     headers=headers,
                 )
                 response.raise_for_status()
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             return response.json()["choices"][0]["message"]["content"].strip()
         except Exception as exc:
+            observe_ai_call(provider="openrouter", duration_seconds=perf_counter() - started)
             logger.warning("sleep_pattern_analysis_ai_failed", error=str(exc))
             return "AI analysis temporarily unavailable."
 

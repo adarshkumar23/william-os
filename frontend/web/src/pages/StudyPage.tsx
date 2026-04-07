@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Clock3, Play, RotateCcw } from "lucide-react";
 
 import ChartWrapper from "../components/ChartWrapper";
+import EmptyStatePanel from "../components/EmptyStatePanel";
 import FlashCard from "../components/FlashCard";
 import { api } from "../services/api";
 import { MockTest, RevisionCard, Subject } from "../types/api";
@@ -86,6 +87,16 @@ export default function StudyPage() {
     }
   }, [secondsLeft]);
 
+  const onCreateStarterSubject = async () => {
+    await api.study.createSubject({
+      name: "General Revision",
+      syllabus_topics: ["Starter topic"],
+      total_weight: 1,
+      color: "#3B82F6",
+    });
+    await load();
+  };
+
   return (
     <div className="space-y-6">
       <header>
@@ -93,20 +104,30 @@ export default function StudyPage() {
         <p className="text-sm text-[rgb(var(--text-dim))]">Revision, timer flow, and progress analytics.</p>
       </header>
 
-      <section className="card p-4">
-        <h2 className="mb-3 text-lg font-semibold">Subjects</h2>
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {subjects.map((subject, index) => (
-            <article key={subject.id} className="min-w-[220px] rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] p-3">
-              <div
-                className="mb-2 h-1 rounded-full"
-                style={{ background: ["#3B82F6", "#10B981", "#F59E0B", "#F43F5E"][index % 4] }}
-              />
-              <p className="text-sm font-semibold">{subject.name}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+      {subjects.length === 0 ? (
+        <EmptyStatePanel
+          title="No Study Subjects Yet"
+          description="This section helps you track sessions, revision cards, mock scores, and momentum over time."
+          ctaLabel="Create your first subject"
+          onCta={() => void onCreateStarterSubject()}
+          moduleKey="study"
+        />
+      ) : (
+        <section className="card p-4">
+          <h2 className="mb-3 text-lg font-semibold">Subjects</h2>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {subjects.map((subject, index) => (
+              <article key={subject.id} className="min-w-[220px] rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] p-3">
+                <div
+                  className="mb-2 h-1 rounded-full"
+                  style={{ background: ["#3B82F6", "#10B981", "#F59E0B", "#F43F5E"][index % 4] }}
+                />
+                <p className="text-sm font-semibold">{subject.name}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">

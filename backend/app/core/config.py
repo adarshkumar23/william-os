@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     sentry_dsn: SecretStr = Field(default=SecretStr(""))
     sentry_traces_sample_rate: float = 0.1
+    sentry_profiles_sample_rate: float = 0.0
+    otel_enabled: bool = True
+    otel_service_name: str = "william-os-backend"
+    otel_exporter_otlp_endpoint: str = ""
+    otel_traces_sample_rate: float = 0.2
+    otel_exporter_timeout_seconds: int = 10
 
     # ── Experimentation ─────────────────────────────────────────
     experiment_rollout_seed: str = "william-os"

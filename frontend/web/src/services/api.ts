@@ -3,11 +3,24 @@ import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from "ax
 import {
   AnyRecord,
   ApiEnvelope,
+  ActivityFeedItem,
+  AgentRecommendationLog,
+  AgentStatus,
   AuthTokens,
+  CursorPage,
+  GamificationProfile,
+  GamificationRecord,
+  GamificationXPEvent,
+  MorningBriefing,
+  MorningBriefingSendResult,
   DailyPlan,
   Decision,
   DecisionAnalysis,
   EnergyForecast,
+    LoginHistoryItem,
+    SecretMetadata,
+    SessionDevice,
+    TotpSetupPayload,
   Habit,
   HabitCheckIn,
   LifeScore,
@@ -19,6 +32,9 @@ import {
   MockTest,
   NotificationItem,
   PortfolioSummary,
+  PredictiveWarning,
+  RuleEvaluationResult,
+  RuleTemplate,
   RevisionCard,
   SleepRecommendation,
   SleepRecord,
@@ -26,10 +42,12 @@ import {
   StudySession,
   Subject,
   Trade,
+  UserRule,
   UserProfile,
   VoiceHistoryItem,
   Workout,
 } from "../types/api";
+import { recordApiError, recordRefreshTokenFailure } from "../observability/client";
 
 const ACCESS_KEY = "william_access_token";
 const REFRESH_KEY = "william_refresh_token";
@@ -105,6 +123,7 @@ const refreshAccessToken = async (): Promise<string | null> => {
     saveTokens(tokens);
     return tokens.access_token;
   } catch {
+    recordRefreshTokenFailure(window.location.pathname);
     return null;
   }
 };
@@ -121,12 +140,18 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const statusCode = error.response?.status ?? 0;
+
+    if (originalRequest?.url && !originalRequest.url.includes("/auth/refresh")) {
+      recordApiError(window.location.pathname, originalRequest.url, statusCode);
+    }
 
     if (!originalRequest || error.response?.status !== 401 || originalRequest._retry) {
       return Promise.reject(error);
     }
 
     if (originalRequest.url?.includes("/auth/refresh")) {
+      recordRefreshTokenFailure(window.location.pathname);
       clearAuthStorage();
       window.location.assign("/login");
       return Promise.reject(error);
@@ -208,10 +233,23 @@ export const api = {
       password: string;
       device_name?: string;
       device_type?: string;
+      totp_code?: string;
     }) => post<AuthTokens>("/auth/login", payload),
     refresh: () => post<AuthTokens>("/auth/refresh", { refresh_token: getRefreshToken() }),
     logout: () => post<{ logged_out: boolean }>("/auth/logout"),
     me: () => get<UserProfile>("/auth/me"),
+    setup2fa: () => get<TotpSetupPayload>("/auth/2fa/setup"),
+    verify2fa: (code: string) => post<{ enabled: boolean }>("/auth/2fa/verify", { code }),
+    sessions: () => get<SessionDevice[]>("/auth/sessions"),
+    revokeSession: (sessionId: string) => del<{ revoked: boolean }>(`/auth/sessions/${sessionId}`),
+    loginHistory: (limit = 25) => get<LoginHistoryItem[]>("/auth/login-history", { limit }),
+  },
+
+  security: {
+    listSecrets: () => get<SecretMetadata[]>("/security/secrets"),
+    rotateSecret: (payload: { provider: string; plaintext_key: string }) =>
+      post<SecretMetadata>("/security/secrets/rotate", payload),
+    revokeSecret: (secretId: string) => del<{ revoked: boolean }>(`/security/secrets/${secretId}`),
   },
 
   scheduler: {
@@ -224,6 +262,42 @@ export const api = {
     startBlock: (blockId: string) => post<DailyPlan>(`/schedule/blocks/${blockId}/start`),
     reschedule: (planDate: string, payload: { reason: string; trigger?: string; new_constraints?: AnyRecord }) =>
       post<DailyPlan>(`/schedule/${planDate}/reschedule`, payload),
+  },
+
+  briefing: {
+    today: () => get<MorningBriefing>("/briefing/today"),
+    sendNow: () => post<MorningBriefingSendResult>("/briefing/send-now"),
+  },
+
+  feed: {
+    list: (params?: { limit?: number; before_cursor?: string }) =>
+      get<CursorPage<ActivityFeedItem>>("/feed", params),
+  },
+
+  agents: {
+    status: () => get<AgentStatus[]>("/agents/status"),
+    recommendations: (params?: { limit?: number }) =>
+      get<AgentRecommendationLog[]>("/agents/recommendations", params),
+    trigger: (name: string) => post<Record<string, unknown>>(`/agents/${name}/trigger`),
+  },
+
+  rules: {
+    list: () => get<UserRule[]>("/rules"),
+    templates: () => get<RuleTemplate[]>("/rules/templates"),
+    create: (payload: AnyRecord) => post<UserRule>("/rules", payload),
+    update: (ruleId: string, payload: AnyRecord) => post<UserRule>(`/rules/${ruleId}`, payload),
+    put: (ruleId: string, payload: AnyRecord) =>
+      apiClient.put<ApiEnvelope<UserRule>>(`/rules/${ruleId}`, payload).then((response) => unwrap(response.data)),
+    remove: (ruleId: string) => del<{ deleted: boolean }>(`/rules/${ruleId}`),
+    evaluateNow: () => post<RuleEvaluationResult>("/rules/evaluate-now"),
+  },
+
+  gamification: {
+    profile: () => get<GamificationProfile>("/gamification/profile"),
+    xpHistory: (params?: { limit?: number; offset?: number }) =>
+      get<GamificationXPEvent[]>("/gamification/xp-history", params),
+    records: (params?: { limit?: number; offset?: number }) =>
+      get<GamificationRecord[]>("/gamification/records", params),
   },
 
   habits: {
@@ -358,8 +432,15 @@ export const api = {
   },
 
   intelligence: {
+    adjustments: () => get<Record<string, unknown>>("/intelligence/adjustments"),
     lifeScore: () => get<LifeScore>("/intelligence/life-score"),
     lifeScoreHistory: (days = 30) => get<LifeScoreHistoryPoint[]>("/intelligence/life-score/history", { days }),
+    warnings: () => get<PredictiveWarning[]>("/intelligence/warnings"),
+    scanWarnings: () => post<PredictiveWarning[]>("/intelligence/warnings/scan"),
+  },
+
+  memory: {
+    insights: () => get<Array<Record<string, unknown>>>("/memory/insights"),
   },
 
   export: {
@@ -374,6 +455,10 @@ export const api = {
     },
     lifetime: async (passphrase: string) => {
       const response = await apiClient.post("/export/lifetime", { passphrase }, { responseType: "blob" });
+      return response.data as Blob;
+    },
+    auditCsv: async () => {
+      const response = await apiClient.get("/export/audit-log.csv", { responseType: "blob" });
       return response.data as Blob;
     },
     deleteAccount: (password: string) => del<{ deleted: boolean }>("/export/account", { password }),

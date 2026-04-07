@@ -9,12 +9,14 @@ import json
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from math import isfinite
+from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
+from app.core.metrics import observe_ai_call, set_life_score
 from app.modules.decisions.service import DecisionService
 from app.modules.fitness.service import FitnessService
 from app.modules.habits.service import HabitsService
@@ -430,6 +432,7 @@ class LifeScoreService:
         self.db.add(life_score)
         await self.db.flush()
         await self.db.refresh(life_score)
+        set_life_score(user_id=user_id, score=score)
 
         await event_bus.publish(
             Event(
@@ -509,6 +512,7 @@ class LifeScoreService:
         )
 
         try:
+            started = perf_counter()
             async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(
                     url,
@@ -519,8 +523,10 @@ class LifeScoreService:
                 raw = response.json()
 
             text = raw["candidates"][0]["content"]["parts"][0]["text"]
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
             return self._normalize_explanation(text=text, score=score, components=components)
         except Exception as exc:
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
             logger.warning("life_score_explanation_failed", error=str(exc))
             return self._fallback_explanation(score=score, components=components)
 

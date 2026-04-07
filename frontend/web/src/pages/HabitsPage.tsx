@@ -2,6 +2,7 @@ import { addDays, format } from "date-fns";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import EmptyStatePanel from "../components/EmptyStatePanel";
 import HabitCard from "../components/HabitCard";
 import Modal from "../components/Modal";
 import { api } from "../services/api";
@@ -83,59 +84,71 @@ export default function HabitsPage() {
         </button>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {habits.map((habit) => (
-          <HabitCard
-            key={habit.id}
-            habit={habit}
-            checkedToday={Boolean(checkedToday[habit.id])}
-            onToggle={onToggleHabit}
-          />
-        ))}
-      </section>
+      {habits.length === 0 ? (
+        <EmptyStatePanel
+          title="No Habits Yet"
+          description="This section tracks daily consistency, streak momentum, and procrastination signals."
+          ctaLabel="Log your first habit"
+          onCta={() => setOpenAdd(true)}
+          moduleKey="habits"
+        />
+      ) : (
+        <>
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {habits.map((habit) => (
+              <HabitCard
+                key={habit.id}
+                habit={habit}
+                checkedToday={Boolean(checkedToday[habit.id])}
+                onToggle={onToggleHabit}
+              />
+            ))}
+          </section>
 
-      <section className="card p-4">
-        <h2 className="text-lg font-semibold">Weekly completion heatmap</h2>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[560px] border-collapse">
-            <thead>
-              <tr>
-                <th className="pb-2 text-left text-xs text-[rgb(var(--text-dim))]">Habit</th>
-                {heatmapDays.map((day) => (
-                  <th key={day.toISOString()} className="pb-2 text-center text-xs text-[rgb(var(--text-dim))]">
-                    {format(day, "EEE")}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {habits.map((habit) => (
-                <tr key={habit.id}>
-                  <td className="py-2 text-sm font-medium">{habit.name}</td>
-                  {heatmapDays.map((day) => {
-                    const isToday = format(day, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
-                    const done = isToday ? Boolean(checkedToday[habit.id]) : (habit.current_streak ?? 0) > 0;
-                    return (
-                      <td key={day.toISOString()} className="py-2 text-center">
-                        <span
-                          className={`inline-block h-5 w-5 rounded ${
-                            done ? "bg-emerald-500/80" : "bg-[rgb(var(--bg-muted))]"
-                          }`}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+          <section className="card p-4">
+            <h2 className="text-lg font-semibold">Weekly completion heatmap</h2>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[560px] border-collapse">
+                <thead>
+                  <tr>
+                    <th className="pb-2 text-left text-xs text-[rgb(var(--text-dim))]">Habit</th>
+                    {heatmapDays.map((day) => (
+                      <th key={day.toISOString()} className="pb-2 text-center text-xs text-[rgb(var(--text-dim))]">
+                        {format(day, "EEE")}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {habits.map((habit) => (
+                    <tr key={habit.id}>
+                      <td className="py-2 text-sm font-medium">{habit.name}</td>
+                      {heatmapDays.map((day) => {
+                        const isToday = format(day, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+                        const done = isToday ? Boolean(checkedToday[habit.id]) : (habit.current_streak ?? 0) > 0;
+                        return (
+                          <td key={day.toISOString()} className="py-2 text-center">
+                            <span
+                              className={`inline-block h-5 w-5 rounded ${
+                                done ? "bg-emerald-500/80" : "bg-[rgb(var(--bg-muted))]"
+                              }`}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-      <section className="card p-4">
-        <h2 className="text-lg font-semibold">Procrastination detection</h2>
-        <p className="mt-2 text-sm text-[rgb(var(--text-dim))]">{procrastinationStatus}</p>
-      </section>
+          <section className="card p-4">
+            <h2 className="text-lg font-semibold">Procrastination detection</h2>
+            <p className="mt-2 text-sm text-[rgb(var(--text-dim))]">{procrastinationStatus}</p>
+          </section>
+        </>
+      )}
 
       <Modal
         open={openAdd}

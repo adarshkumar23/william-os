@@ -4,6 +4,7 @@ import { Activity, Flame, Footprints, HeartPulse, Moon } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import ChartWrapper from "../components/ChartWrapper";
+import EmptyStatePanel from "../components/EmptyStatePanel";
 import StatCard from "../components/StatCard";
 import { api } from "../services/api";
 import { EnergyForecast, Workout } from "../types/api";
@@ -70,15 +71,33 @@ export default function FitnessPage() {
         <article className="card p-4">
           <h2 className="text-lg font-semibold">Workout log</h2>
           <div className="mt-3 space-y-2">
-            {workouts.map((workout) => (
-              <div key={workout.id} className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] p-3">
-                <p className="text-sm font-medium">{workout.activity}</p>
-                <p className="text-xs text-[rgb(var(--text-dim))]">
-                  {workout.duration_minutes} min • {workout.workout_date}
-                </p>
-              </div>
-            ))}
-            {workouts.length === 0 ? <p className="text-sm text-[rgb(var(--text-dim))]">No workouts logged yet.</p> : null}
+            {workouts.length === 0 ? (
+              <EmptyStatePanel
+                title="No Workouts Logged"
+                description="This section tracks your movement, energy trends, and recovery patterns."
+                ctaLabel="Log your first workout"
+                onCta={() =>
+                  void api.fitness
+                    .logWorkout({
+                      workout_type: "Walk",
+                      duration_minutes: 30,
+                      calories_burned: 120,
+                      workout_date: format(new Date(), "yyyy-MM-dd"),
+                    })
+                    .then(load)
+                }
+                moduleKey="fitness"
+              />
+            ) : (
+              workouts.map((workout) => (
+                <div key={workout.id} className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] p-3">
+                  <p className="text-sm font-medium">{workout.activity}</p>
+                  <p className="text-xs text-[rgb(var(--text-dim))]">
+                    {workout.duration_minutes} min • {workout.workout_date}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
           <button
             type="button"

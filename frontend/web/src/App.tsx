@@ -13,6 +13,7 @@ import JournalPage from "./pages/JournalPage";
 import LoginPage from "./pages/LoginPage";
 import MedicinePage from "./pages/MedicinePage";
 import RegisterPage from "./pages/RegisterPage";
+import RulesPage from "./pages/RulesPage";
 import SettingsPage from "./pages/SettingsPage";
 import SleepPage from "./pages/SleepPage";
 import StudyPage from "./pages/StudyPage";
@@ -36,6 +37,10 @@ function AnimatedRouteWrapper({ children }: { children: ReactNode }) {
   );
 }
 
+function ModuleBoundary({ moduleName, children }: { moduleName: string; children: ReactNode }) {
+  return <ErrorBoundary moduleName={moduleName}>{children}</ErrorBoundary>;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -48,20 +53,53 @@ export default function App() {
             <Route
               path="/dashboard"
               element={
-                <AnimatedRouteWrapper>
-                  <DashboardPage />
-                </AnimatedRouteWrapper>
+                <ModuleBoundary moduleName="dashboard">
+                  <AnimatedRouteWrapper>
+                    <DashboardPage />
+                  </AnimatedRouteWrapper>
+                </ModuleBoundary>
               }
             />
-            <Route path="/habits" element={<AnimatedRouteWrapper><HabitsPage /></AnimatedRouteWrapper>} />
-            <Route path="/journal" element={<AnimatedRouteWrapper><JournalPage /></AnimatedRouteWrapper>} />
-            <Route path="/medicine" element={<AnimatedRouteWrapper><MedicinePage /></AnimatedRouteWrapper>} />
-            <Route path="/study" element={<AnimatedRouteWrapper><StudyPage /></AnimatedRouteWrapper>} />
-            <Route path="/fitness" element={<AnimatedRouteWrapper><FitnessPage /></AnimatedRouteWrapper>} />
-            <Route path="/trading" element={<AnimatedRouteWrapper><TradingPage /></AnimatedRouteWrapper>} />
-            <Route path="/sleep" element={<AnimatedRouteWrapper><SleepPage /></AnimatedRouteWrapper>} />
-            <Route path="/decisions" element={<AnimatedRouteWrapper><DecisionsPage /></AnimatedRouteWrapper>} />
-            <Route path="/settings" element={<AnimatedRouteWrapper><SettingsPage /></AnimatedRouteWrapper>} />
+            <Route
+              path="/habits"
+              element={<ModuleBoundary moduleName="habits"><AnimatedRouteWrapper><HabitsPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/journal"
+              element={<ModuleBoundary moduleName="journal"><AnimatedRouteWrapper><JournalPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/medicine"
+              element={<ModuleBoundary moduleName="medicine"><AnimatedRouteWrapper><MedicinePage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/study"
+              element={<ModuleBoundary moduleName="study"><AnimatedRouteWrapper><StudyPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/fitness"
+              element={<ModuleBoundary moduleName="fitness"><AnimatedRouteWrapper><FitnessPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/trading"
+              element={<ModuleBoundary moduleName="trading"><AnimatedRouteWrapper><TradingPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/sleep"
+              element={<ModuleBoundary moduleName="sleep"><AnimatedRouteWrapper><SleepPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/decisions"
+              element={<ModuleBoundary moduleName="decisions"><AnimatedRouteWrapper><DecisionsPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/rules"
+              element={<ModuleBoundary moduleName="rules"><AnimatedRouteWrapper><RulesPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/settings"
+              element={<ModuleBoundary moduleName="settings"><AnimatedRouteWrapper><SettingsPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
           </Route>
         </Route>
 

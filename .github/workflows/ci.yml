@@ -22,16 +22,73 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Install dependencies
         working-directory: backend
         run: |
           pip install -e ".[dev]"
 
-      - name: Dependency vulnerability scan
-        continue-on-error: true
+        - name: Python dependency vulnerability scan (fail on high)
         run: |
           pip install pip-audit
-          pip-audit --progress-spinner off
+          pip-audit --progress-spinner off --format json --output /tmp/pip-audit.json || true
+          python - <<'PY'
+          import json
+          import re
+          import sys
+
+          def parse_score(value):
+            if value is None:
+              return None
+            if isinstance(value, (int, float)):
+              return float(value)
+            if isinstance(value, str):
+              match = re.search(r"([0-9]+(?:\.[0-9]+)?)", value)
+              return float(match.group(1)) if match else None
+            if isinstance(value, dict):
+              for key in ("score", "cvss", "baseScore", "value"):
+                score = parse_score(value.get(key))
+                if score is not None:
+                  return score
+            if isinstance(value, list):
+              for item in value:
+                score = parse_score(item)
+                if score is not None:
+                  return score
+            return None
+
+          with open("/tmp/pip-audit.json", "r", encoding="utf-8") as fh:
+            report = json.load(fh)
+
+          rows = report.get("dependencies", report if isinstance(report, list) else [])
+          high = []
+          for dep in rows:
+            for vuln in dep.get("vulns", []):
+              score = None
+              for key in ("severity", "cvssv3", "cvss_score", "score"):
+                score = parse_score(vuln.get(key))
+                if score is not None:
+                  break
+              if score is not None and score >= 7.0:
+                high.append((dep.get("name", "unknown"), vuln.get("id", "unknown"), score))
+
+          if high:
+            print("High severity Python vulnerabilities detected:")
+            for pkg, vuln_id, score in high:
+              print(f"- {pkg}: {vuln_id} (cvss={score})")
+            sys.exit(1)
+
+          print("No high severity Python vulnerabilities detected.")
+          PY
+
+        - name: Frontend dependency vulnerability scan (fail on high)
+        working-directory: frontend/web
+        run: |
+          npm ci
+          npm audit --audit-level=high
 
       - name: Ruff lint
         working-directory: backend

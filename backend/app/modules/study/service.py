@@ -12,6 +12,8 @@ from datetime import date, timedelta
 import httpx
 import structlog
 from app.core.config import get_settings
+from app.core.events import Event, EventType, event_bus
+from app.modules.memory.service import MemoryService
 from app.modules.study.models import MockTest, RevisionCard, StudySession, Subject
 from app.modules.study.schemas import (
     MockTestCreate,
@@ -95,6 +97,20 @@ class StudyService:
         self.db.add(session)
         await self.db.flush()
         await self.db.refresh(session)
+
+        await event_bus.publish(
+            Event(
+                type=EventType.STUDY_SESSION_COMPLETED,
+                data={
+                    "session_id": str(session.id),
+                    "subject_id": str(subject_id),
+                    "duration_minutes": session.duration_minutes,
+                    "session_date": str(session.session_date),
+                },
+                user_id=user_id,
+            )
+        )
+
         return StudySessionResponse.model_validate(session)
 
     async def list_sessions(
@@ -353,6 +369,7 @@ class StudyService:
         weak_subjects = [item.subject for item in weakest[:3]]
 
         plan = await self._generate_ai_plan(
+            user_id=user_id,
             target_date=request.target_date,
             daily_hours=request.daily_hours,
             weak_subjects=weak_subjects,
@@ -385,6 +402,7 @@ class StudyService:
 
     async def _generate_ai_plan(
         self,
+        user_id: uuid.UUID,
         target_date: date,
         daily_hours: int,
         weak_subjects: list[str],
@@ -394,11 +412,17 @@ class StudyService:
         if not api_key:
             return None
 
+        memory_context = await MemoryService(self.db).get_relevant_memory_context(
+            user_id=user_id,
+            modules=["study", "sleep", "habits"],
+            limit=6,
+        )
         prompt = (
             "Generate prioritized study schedule blocks as JSON array. "
             "Each item must include title, category, start_time, end_time, priority, tags. "
             f"Target date: {target_date}. Daily hours: {daily_hours}. "
             f"Weak subjects: {weak_subjects}. Progress: {[item.model_dump() for item in progress]}"
+            f" Memory context: {memory_context}"
         )
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"

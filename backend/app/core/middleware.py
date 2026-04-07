@@ -7,6 +7,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+from app.core.metrics import observe_api_request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 if TYPE_CHECKING:
@@ -47,6 +48,15 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next) -> Response:
         start = time.perf_counter()
         response = await call_next(request)
-        elapsed_ms = (time.perf_counter() - start) * 1000
+        elapsed_seconds = time.perf_counter() - start
+        elapsed_ms = elapsed_seconds * 1000
+        route = request.scope.get("route")
+        endpoint = getattr(route, "path", request.url.path)
+        observe_api_request(
+            endpoint=endpoint,
+            method=request.method,
+            status=response.status_code,
+            duration_seconds=elapsed_seconds,
+        )
         response.headers["X-Response-Time-ms"] = f"{elapsed_ms:.2f}"
         return response

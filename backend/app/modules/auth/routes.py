@@ -6,13 +6,16 @@ Registration, login, token refresh, profile management.
 from __future__ import annotations
 
 import uuid
-
 import structlog
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.modules.auth.schemas import (
+    LoginHistoryResponse,
+    SessionDeviceResponse,
     TokenRefresh,
+    TotpSetupResponse,
+    TotpVerifyRequest,
     UserLogin,
     UserRegister,
 )
@@ -130,3 +133,68 @@ async def get_me(
     service = AuthService(db)
     profile = await service.get_profile(user_id)
     return success(profile.model_dump(mode="json"))
+
+
+@router.get("/2fa/setup")
+async def setup_2fa(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    payload: TotpSetupResponse = TotpSetupResponse.model_validate(
+        await service.generate_totp_setup(user_id)
+    )
+    return success(payload.model_dump(mode="json"))
+
+
+@router.post("/2fa/verify")
+async def verify_2fa(
+    request: TotpVerifyRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    ok = await service.verify_totp(user_id=user_id, code=request.code)
+    return success({"enabled": ok})
+
+
+@router.get("/sessions")
+async def list_sessions(
+    request: Request,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    sessions = await service.list_sessions(user_id=user_id, current_refresh_token=refresh_token)
+    payload = [
+        SessionDeviceResponse.model_validate(item).model_dump(mode="json")
+        for item in sessions
+    ]
+    return success(payload)
+
+
+@router.delete("/sessions/{session_id}")
+async def revoke_session(
+    session_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    revoked = await service.revoke_session(user_id=user_id, session_id=session_id)
+    return success({"revoked": revoked})
+
+
+@router.get("/login-history")
+async def login_history(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 25,
+) -> dict:
+    service = AuthService(db)
+    rows = await service.list_login_history(user_id=user_id, limit=limit)
+    payload = [
+        LoginHistoryResponse.model_validate(row).model_dump(mode="json")
+        for row in rows
+    ]
+    return success(payload)

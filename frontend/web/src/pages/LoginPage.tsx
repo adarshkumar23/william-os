@@ -11,6 +11,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,7 +36,7 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await login(email.trim(), password, totpCode.trim() || undefined);
       const from = (location.state as { from?: string } | null)?.from;
       navigate(from || "/dashboard", { replace: true });
     } catch (err) {
@@ -74,6 +75,19 @@ export default function LoginPage() {
               autoComplete="current-password"
               className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 outline-none ring-[rgb(var(--ring))] transition focus:ring-2"
               placeholder="Your password"
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">2FA code (if enabled)</span>
+            <input
+              value={totpCode}
+              onChange={(event) => setTotpCode(event.target.value)}
+              type="text"
+              autoComplete="one-time-code"
+              className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 outline-none ring-[rgb(var(--ring))] transition focus:ring-2"
+              placeholder="123456"
+              inputMode="numeric"
             />
           </label>
 
