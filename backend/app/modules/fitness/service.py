@@ -130,8 +130,8 @@ class FitnessService:
         return [WorkoutLogResponse.model_validate(item) for item in result.scalars().all()]
 
     async def get_daily_summary(self, user_id: uuid.UUID, target_date: date) -> DailyHealthSummary:
-        start_dt = datetime.combine(target_date, time.min).replace(tzinfo=UTC)
-        end_dt = datetime.combine(target_date, time.max).replace(tzinfo=UTC)
+        start_dt = datetime.combine(target_date, time.min)
+        end_dt = datetime.combine(target_date, time.max)
 
         metrics_result = await self.db.execute(
             select(HealthMetric)
@@ -166,7 +166,7 @@ class FitnessService:
         metric_type: str,
         days: int = 30,
     ) -> list[HealthMetricResponse]:
-        cutoff = datetime.now(UTC) - timedelta(days=max(1, days))
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=max(1, days))
         result = await self.db.execute(
             select(HealthMetric)
             .where(HealthMetric.user_id == user_id)
@@ -306,7 +306,7 @@ class FitnessService:
         from app.modules.sleep.service import SleepService
 
         today = date.today()
-        week_ago = datetime.now(UTC) - timedelta(days=7)
+        week_ago = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=7)
 
         sleep_result = await self.db.execute(
             select(func.avg(HealthMetric.value))

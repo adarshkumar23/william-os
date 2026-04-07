@@ -233,7 +233,7 @@ class AuthService:
         access = create_access_token(user.id, {"role": user.role.value, "scopes": scopes})
         refresh = create_refresh_token(user.id)
         device.refresh_token_hash = hash_token(refresh)
-        device.last_active = datetime.now(UTC)
+        device.last_active = datetime.now(UTC).replace(tzinfo=None).replace(tzinfo=None)
         await self.db.flush()
 
         from app.core.config import get_settings
@@ -420,7 +420,7 @@ class AuthService:
         device = existing.scalar_one_or_none()
 
         if device:
-            device.last_active = datetime.now(UTC)
+            device.last_active = datetime.now(UTC).replace(tzinfo=None).replace(tzinfo=None)
             device.device_name = name
             device.device_type = device_type
             device.user_id = user_id
@@ -430,7 +430,7 @@ class AuthService:
                 device_name=name,
                 device_type=device_type,
                 device_fingerprint=fingerprint,
-                last_active=datetime.now(UTC),
+                last_active=datetime.now(UTC).replace(tzinfo=None).replace(tzinfo=None),
             )
             self.db.add(device)
 
@@ -453,7 +453,7 @@ class AuthService:
                 device_fingerprint=device_fingerprint,
                 user_agent=user_agent or None,
                 success=success,
-                timestamp=datetime.now(UTC),
+                timestamp=datetime.now(UTC).replace(tzinfo=None).replace(tzinfo=None),
             )
         )
         await self.db.flush()

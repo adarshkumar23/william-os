@@ -129,7 +129,7 @@ class MessagingService:
             channel="telegram",
             notification_type=payload.notification_type,
             payload=payload.model_dump(mode="json"),
-            sent_at=datetime.now(UTC),
+            sent_at=datetime.now(UTC).replace(tzinfo=None),
             delivered=delivered,
             error=error_text,
         )
@@ -160,7 +160,7 @@ class MessagingService:
             channel="in_app",
             notification_type=payload.notification_type,
             payload=payload.model_dump(mode="json"),
-            sent_at=datetime.now(UTC),
+            sent_at=datetime.now(UTC).replace(tzinfo=None),
             delivered=True,
             error=None,
         )

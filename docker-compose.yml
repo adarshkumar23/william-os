@@ -48,6 +48,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://william:william@postgres:5432/williamos
       - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=http://80.225.215.117:3000,http://localhost:3000
     env_file:
       - .env
     depends_on:
@@ -81,6 +82,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://william:william@postgres:5432/williamos
       - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=http://80.225.215.117:3000,http://localhost:3000
     env_file:
       - .env
     depends_on:
@@ -100,6 +102,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://william:william@postgres:5432/williamos
       - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=http://80.225.215.117:3000,http://localhost:3000
     env_file:
       - .env
     depends_on:

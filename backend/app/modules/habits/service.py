@@ -107,7 +107,7 @@ class HabitsService:
 
         payload = data.model_dump()
         if payload["completed"] and not payload["skipped"] and payload["completed_at"] is None:
-            payload["completed_at"] = datetime.now(UTC)
+            payload["completed_at"] = datetime.now(UTC).replace(tzinfo=None)
         if not payload["completed"] or payload["skipped"]:
             payload["completed_at"] = None
 

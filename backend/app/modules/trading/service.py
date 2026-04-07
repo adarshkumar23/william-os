@@ -281,7 +281,7 @@ class TradingService:
                     alert_type="above",
                     target_price=item.alert_price_above,
                     triggered=True,
-                    triggered_at=datetime.now(UTC),
+                    triggered_at=datetime.now(UTC).replace(tzinfo=None),
                     notification_sent=False,
                 )
                 self.db.add(alert)
@@ -294,7 +294,7 @@ class TradingService:
                     alert_type="below",
                     target_price=item.alert_price_below,
                     triggered=True,
-                    triggered_at=datetime.now(UTC),
+                    triggered_at=datetime.now(UTC).replace(tzinfo=None),
                     notification_sent=False,
                 )
                 self.db.add(alert)

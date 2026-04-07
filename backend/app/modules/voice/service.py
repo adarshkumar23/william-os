@@ -203,7 +203,7 @@ class VoiceService:
                 user_id=user_id,
                 medicine_id=medicine.id,
                 log_date=date.today(),
-                scheduled_time=datetime.now(UTC).time().replace(microsecond=0),
+                scheduled_time=datetime.now(UTC).replace(tzinfo=None).time().replace(microsecond=0),
                 taken=True,
                 skipped=False,
                 skip_reason=None,

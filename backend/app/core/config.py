@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr = Field(default=SecretStr(""))
 
     # ── CORS ─────────────────────────────────────────────────────
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
     # ── Scheduling ───────────────────────────────────────────────
     schedule_regen_cron: str = "0 0 * * *"
@@ -85,12 +85,12 @@ class Settings(BaseSettings):
     # ── Experimentation ─────────────────────────────────────────
     experiment_rollout_seed: str = "william-os"
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors(cls, v: str | list[str]) -> list[str]:
-        if isinstance(v, str):
-            return [s.strip() for s in v.split(",")]
-        return v
+    @property
+    def cors_origins_list(self) -> list[str]:
+        if not self.cors_origins.strip():
+            return ["http://localhost:3000", "http://localhost:5173"]
+        v = self.cors_origins.strip().strip("[]").replace('"', '').replace("'", "")
+        return [s.strip() for s in v.split(",") if s.strip()]
 
     @field_validator("encryption_iterations")
     @classmethod

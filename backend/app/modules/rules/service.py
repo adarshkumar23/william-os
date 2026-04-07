@@ -164,7 +164,7 @@ class RulesService:
                     action_result = await self.execute_action(rule=rule, context=context)
                     action_success = True
                     executed_count += 1
-                    rule.last_triggered = datetime.now(UTC)
+                    rule.last_triggered = datetime.now(UTC).replace(tzinfo=None)
                 except Exception as exc:
                     logger.warning(
                         "rule_execution_failed",
@@ -182,7 +182,7 @@ class RulesService:
                 context_snapshot=context,
                 action_result=action_result,
                 error=error,
-                executed_at=datetime.now(UTC),
+                executed_at=datetime.now(UTC).replace(tzinfo=None),
             )
             self.db.add(log_row)
             await self.db.flush()
@@ -229,7 +229,7 @@ class RulesService:
 
         if action_module == "trading" and action_type == "disable_alerts_temporarily":
             mute_hours = int(action_params.get("hours") or 24)
-            mute_until = datetime.now(UTC) + timedelta(hours=mute_hours)
+            mute_until = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=mute_hours)
             rows = await self.db.execute(
                 select(Watchlist)
                 .where(Watchlist.user_id == rule.user_id)

@@ -255,7 +255,7 @@ class SchedulerService:
             block.duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
 
         if data.status == BlockStatus.COMPLETED:
-            block.actual_end = datetime.now(UTC)
+            block.actual_end = datetime.now(UTC).replace(tzinfo=None)
             await event_bus.publish(
                 Event(
                     type=EventType.SCHEDULE_ITEM_COMPLETED,
@@ -273,7 +273,7 @@ class SchedulerService:
         if not block:
             raise NotFoundError("ScheduleBlock", str(block_id))
         block.status = BlockStatus.IN_PROGRESS
-        block.actual_start = datetime.now(UTC)
+        block.actual_start = datetime.now(UTC).replace(tzinfo=None)
         await self.db.flush()
         plan = await self.db.get(DailyPlan, block.plan_id)
         return DailyPlanResponse.model_validate(plan)

@@ -117,7 +117,7 @@ class MedicineService:
         )
         log = existing_result.scalar_one_or_none()
 
-        taken_at = datetime.now(UTC).time().replace(microsecond=0) if taken else None
+        taken_at = datetime.now(UTC).replace(tzinfo=None).time().replace(microsecond=0) if taken else None
 
         if log:
             log.taken = taken
@@ -203,7 +203,7 @@ class MedicineService:
         user_id: uuid.UUID,
         within_minutes: int = 30,
     ) -> list[UpcomingReminder]:
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         today = now.date()
 
         result = await self.db.execute(

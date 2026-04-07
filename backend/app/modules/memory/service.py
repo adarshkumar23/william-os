@@ -106,7 +106,7 @@ class MemoryService:
                 user_id=user_id,
                 insight=insight_text,
                 supporting_evidence={"memory_keys": [m.key for m in memories[:6]]},
-                generated_at=datetime.now(UTC),
+                generated_at=datetime.now(UTC).replace(tzinfo=None),
                 is_active=True,
             )
             self.db.add(row)
@@ -219,7 +219,7 @@ class MemoryService:
                 value=value,
                 confidence=confidence,
                 source_modules=source_modules,
-                last_updated=datetime.now(UTC),
+                last_updated=datetime.now(UTC).replace(tzinfo=None),
             )
             self.db.add(row)
         else:
@@ -227,7 +227,7 @@ class MemoryService:
             row.value = value
             row.confidence = confidence
             row.source_modules = source_modules
-            row.last_updated = datetime.now(UTC)
+            row.last_updated = datetime.now(UTC).replace(tzinfo=None)
 
         await self.db.flush()
         await self.db.refresh(row)

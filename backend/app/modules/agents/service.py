@@ -592,14 +592,14 @@ class OrchestratorAgentService:
                 status=status_value,
                 last_recommendation=rec_payload,
                 last_action={},
-                last_run_at=datetime.now(UTC),
+                last_run_at=datetime.now(UTC).replace(tzinfo=None),
             )
             self.db.add(row)
         else:
             row.description = agent.description
             row.status = status_value
             row.last_recommendation = rec_payload
-            row.last_run_at = datetime.now(UTC)
+            row.last_run_at = datetime.now(UTC).replace(tzinfo=None)
 
         await self.db.flush()
 
@@ -634,7 +634,7 @@ class OrchestratorAgentService:
             agent_name=action.agent_name,
             action_type=action.action_type,
             action_payload=action.model_dump(mode="json"),
-            executed_at=datetime.now(UTC),
+            executed_at=datetime.now(UTC).replace(tzinfo=None),
             success=success,
             error=error,
         )
@@ -673,7 +673,7 @@ class OrchestratorAgentService:
         if row is None:
             return
         row.last_action = action.model_dump(mode="json")
-        row.last_run_at = datetime.now(UTC)
+        row.last_run_at = datetime.now(UTC).replace(tzinfo=None)
         await self.db.flush()
 
     async def _log_audit(self, user_id: uuid.UUID, details: dict) -> None:

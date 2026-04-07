@@ -215,14 +215,14 @@ class GamificationService:
     ) -> XPEvent:
         profile.total_xp += int(xp)
         profile.level = self._level_from_total_xp(profile.total_xp)
-        profile.last_updated = datetime.now(UTC)
+        profile.last_updated = datetime.now(UTC).replace(tzinfo=None)
 
         event = XPEvent(
             user_id=user_id,
             source_module=source_module,
             action=action,
             xp_earned=int(xp),
-            earned_at=datetime.now(UTC),
+            earned_at=datetime.now(UTC).replace(tzinfo=None),
         )
         self.db.add(event)
         await self.db.flush()
@@ -234,7 +234,7 @@ class GamificationService:
         if row:
             return row
 
-        row = UserXP(user_id=user_id, total_xp=0, level=1, last_updated=datetime.now(UTC))
+        row = UserXP(user_id=user_id, total_xp=0, level=1, last_updated=datetime.now(UTC).replace(tzinfo=None))
         self.db.add(row)
         await self.db.flush()
         await self.db.refresh(row)
@@ -358,7 +358,7 @@ class GamificationService:
             .limit(1)
         )
         row = result.scalar_one_or_none()
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
 
         if row is None:
             row = PersonalRecord(

@@ -46,7 +46,7 @@ class SecretsService:
             key_hint=key_hint,
             version=1 if previous is None else previous.version + 1,
             is_active=True,
-            rotated_at=datetime.now(UTC),
+            rotated_at=datetime.now(UTC).replace(tzinfo=None),
         )
         self.db.add(row)
         await self.db.flush()

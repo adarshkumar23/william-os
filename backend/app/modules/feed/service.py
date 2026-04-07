@@ -570,13 +570,13 @@ class ActivityFeedService:
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
+            return value
         return value.astimezone(UTC)
 
     @staticmethod
     def _encode_cursor(timestamp: datetime, key: str) -> str:
         if timestamp.tzinfo is None:
-            ts = timestamp.replace(tzinfo=UTC)
+            ts = timestamp
         else:
             ts = timestamp.astimezone(UTC)
         payload = {

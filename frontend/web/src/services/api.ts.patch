@@ -1,0 +1,3 @@
+const resolveApiBaseUrl = () => {
+  return "/api/v1";
+};

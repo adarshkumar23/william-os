@@ -53,17 +53,7 @@ const ACCESS_KEY = "william_access_token";
 const REFRESH_KEY = "william_refresh_token";
 
 const resolveApiBaseUrl = () => {
-  const envBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
-  if (envBase) {
-    return envBase;
-  }
-
-  const host = window.location.hostname;
-  if (host === "localhost" || host === "127.0.0.1") {
-    return "http://localhost:8000/api/v1";
-  }
-
-  return "http://80.225.215.117:8000/api/v1";
+  return "/api/v1";
 };
 
 const baseURL = resolveApiBaseUrl();

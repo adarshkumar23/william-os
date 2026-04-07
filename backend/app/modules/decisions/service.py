@@ -115,7 +115,7 @@ class DecisionService:
     ) -> DecisionResponse:
         decision = await self._get_user_decision(user_id=user_id, decision_id=decision_id)
         decision.chosen_option = payload.chosen_option
-        decision.chosen_at = datetime.now(UTC)
+        decision.chosen_at = datetime.now(UTC).replace(tzinfo=None)
         decision.status = "decided"
         if payload.reasoning:
             decision.ai_analysis = (
@@ -134,7 +134,7 @@ class DecisionService:
         decision = await self._get_user_decision(user_id=user_id, decision_id=decision_id)
         decision.outcome = payload.outcome
         decision.outcome_rating = payload.outcome_rating
-        decision.reviewed_at = datetime.now(UTC)
+        decision.reviewed_at = datetime.now(UTC).replace(tzinfo=None)
         decision.status = "reviewed"
         await self.db.flush()
         await self.db.refresh(decision)

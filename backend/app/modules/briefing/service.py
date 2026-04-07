@@ -77,7 +77,7 @@ class MorningBriefingService:
         )
 
         return MorningBriefingResponse(
-            generated_at=datetime.now(UTC),
+            generated_at=datetime.now(UTC).replace(tzinfo=None),
             sleep_quality=sleep_quality,
             today_schedule=today_schedule,
             priority_habits=priority_habits,
@@ -116,7 +116,7 @@ class MorningBriefingService:
         timezone_name: str,
         now_utc: datetime | None = None,
     ) -> bool:
-        now = now_utc or datetime.now(UTC)
+        now = now_utc or datetime.now(UTC).replace(tzinfo=None)
         tz = self._resolve_timezone(timezone_name)
         local_now = now.astimezone(tz)
         local_day_start = datetime.combine(local_now.date(), time.min, tzinfo=tz)
@@ -359,7 +359,7 @@ class MorningBriefingService:
                     "Life score unavailable right now; "
                     "focus on one high-impact task early."
                 ),
-                computed_at=datetime.now(UTC),
+                computed_at=datetime.now(UTC).replace(tzinfo=None),
             )
 
     async def _generate_recommendation(self, context: dict) -> str:

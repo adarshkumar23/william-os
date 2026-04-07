@@ -108,7 +108,7 @@ class EmailIntelService:
         )
         self.db.add(summary)
 
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         for account in await self._get_active_account_models(user_id):
             account.last_sync_at = now
 

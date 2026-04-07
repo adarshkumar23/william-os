@@ -69,7 +69,7 @@ class IntelligenceService:
         self.db = db
 
     async def collect_signals(self, user_id: uuid.UUID) -> list[ModuleSignalResponse]:
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         collected: list[ModuleSignalResponse] = []
 
         for source_module, signal_type, value in await self._gather_signal_triplets(user_id):
@@ -229,7 +229,7 @@ class IntelligenceService:
             grouped[item.affected_module].append(item)
 
         return AdjustmentsResponse(
-            generated_at=datetime.now(UTC),
+            generated_at=datetime.now(UTC).replace(tzinfo=None),
             count=len(adjustments),
             adjustments=dict(grouped),
         )
@@ -427,7 +427,7 @@ class LifeScoreService:
             score=score,
             component_scores=component_scores,
             explanation=explanation,
-            computed_at=datetime.now(UTC),
+            computed_at=datetime.now(UTC).replace(tzinfo=None),
         )
         self.db.add(life_score)
         await self.db.flush()
@@ -454,7 +454,7 @@ class LifeScoreService:
         latest = result.scalar_one_or_none()
 
         if latest:
-            age = datetime.now(UTC) - latest.computed_at
+            age = datetime.now(UTC).replace(tzinfo=None) - latest.computed_at.replace(tzinfo=None) if latest.computed_at else timedelta(0).replace(tzinfo=None)
             if age <= timedelta(minutes=180):
                 return LifeScoreResponse.model_validate(latest)
 
@@ -465,7 +465,7 @@ class LifeScoreService:
         user_id: uuid.UUID,
         days: int = 30,
     ) -> list[LifeScoreHistoryPoint]:
-        cutoff = datetime.now(UTC) - timedelta(days=max(1, days))
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=max(1, days))
         result = await self.db.execute(
             select(LifeScore)
             .where(LifeScore.user_id == user_id)
