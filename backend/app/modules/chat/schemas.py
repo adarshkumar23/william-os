@@ -32,7 +32,7 @@ class ChatMessageResponse(BaseModel):
     role: MessageRole
     content: str
     actions_taken: list | None = None
-    metadata_: dict | None = Field(default=None, alias="metadata")
+    extra_metadata: dict | None = Field(default=None)
     created_at: datetime
 
     model_config = {"from_attributes": True, "populate_by_name": True}

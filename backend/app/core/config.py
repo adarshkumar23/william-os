@@ -1,5 +1,5 @@
 """
-WILLIAM OS — Application Configuration
+William Salvator — Application Configuration
 All settings from environment with validated defaults.
 """
 
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     )
 
     # ── App ──────────────────────────────────────────────────────
-    app_name: str = "WILLIAM OS"
+    app_name: str = "William Salvator"
     app_version: str = "0.1.0"
     environment: Literal["development", "staging", "production"] = "development"
     debug: bool = False
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # ── AI ────────────────────────────────────────────────────────
     gemini_api_key: SecretStr = Field(default=SecretStr(""))
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-2.5-flash"
     openrouter_api_key: SecretStr = Field(default=SecretStr(""))
     openrouter_model: str = "meta-llama/llama-3.1-70b-instruct"
     whisper_api_key: SecretStr = Field(default=SecretStr(""))

@@ -1,5 +1,5 @@
 """
-WILLIAM OS — Chat Service
+William Salvator — Chat Service
 Handles standard messaging, calling Gemini, parsing actions, and retrieving context.
 """
 
@@ -241,7 +241,7 @@ class ChatService:
     async def _call_gemini(self, system_prompt: str, history: list[ChatMessage], new_content: str) -> str:
         api_key = self.settings.gemini_api_key.get_secret_value()
         if not api_key:
-            return "WILLIAM OS is running in limited mode. AI functionality is not available."
+            return "William Salvator is running in limited mode. AI functionality is not available."
 
         messages = [{"role": "system", "parts": [{"text": system_prompt}]}]
         for msg in history:

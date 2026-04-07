@@ -27,7 +27,7 @@ from app.modules.briefing.service import MorningBriefingService
 from app.modules.journal.service import JournalService
 
 from app.modules.habits.schemas import HabitCreate
-from app.modules.scheduler.schemas import ScheduleBlockCreate
+from app.modules.scheduler.schemas import BlockCreate as ScheduleBlockCreate
 from app.modules.sleep.schemas import SleepRecordCreate
 from app.modules.decisions.schemas import DecisionCreate
 

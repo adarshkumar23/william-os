@@ -553,3 +553,6 @@ export type ChatMessage = {
   metadata?: Record<string, unknown> | null;
   created_at: string;
 };
+
+
+export type AgentName = "health" | "study" | "trading" | "executive" | "recovery" | "os";

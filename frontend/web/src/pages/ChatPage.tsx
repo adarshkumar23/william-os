@@ -167,9 +167,9 @@ export default function ChatPage() {
           const transcribedText = transcriptionData?.transcription || transcriptionData?.text;
           
           if (transcribedText) {
-            setInput(transcribedText);
+            setInput(String(transcribedText));
             // Optionally auto-send if confidence > 0.8, but for now we put it in the input box
-            if (transcriptionData?.confidence && transcriptionData.confidence > 0.8) {
+            if (transcriptionData?.confidence && Number(transcriptionData.confidence) > 0.8) {
                // Schedule the send using the event loop, letting React update the state
                setTimeout(() => {
                  const fakeFormEvent = { preventDefault: () => {} } as React.FormEvent;
@@ -194,7 +194,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-8rem)] w-full gap-6">
       {/* Sidebar: Session History */}
-      <AppCard padding="none" className="flex w-80 flex-col overflow-hidden">
+      <AppCard className="flex w-80 flex-col overflow-hidden p-0">
         <div className="flex items-center justify-between border-b border-border p-4">
           <div>
             <h2 className="text-sm font-semibold tracking-tight text-text-primary">Conversations</h2>
@@ -270,7 +270,7 @@ export default function ChatPage() {
       </AppCard>
 
       {/* Main Chat Area */}
-      <AppCard padding="none" className="flex flex-1 flex-col overflow-hidden relative">
+      <AppCard className="flex flex-1 flex-col overflow-hidden relative p-0">
          {error && (
             <div className="absolute top-4 left-4 right-4 z-10">
               <InsightBanner text={error} type="danger" dismissible />

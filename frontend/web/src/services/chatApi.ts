@@ -3,7 +3,7 @@ import {
   ChatMessage,
   ChatSession,
   ChatSessionListItem,
-} from "./api"; // I'll add these to api.ts
+} from "../types/api";
 
 export const chatApi = {
     // Will be merged into api.ts
