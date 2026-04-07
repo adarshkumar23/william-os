@@ -1,5 +1,6 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import Layout from "./components/Layout";
@@ -21,15 +22,16 @@ import TradingPage from "./pages/TradingPage";
 
 function AnimatedRouteWrapper({ children }: { children: ReactNode }) {
   const location = useLocation();
+  const shouldReduceMotion = useReducedMotion();
 
   return (
     <AnimatePresence mode="wait">
       <motion.div
         key={location.pathname}
-        initial={{ opacity: 0, y: 10 }}
+        initial={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -10 }}
-        transition={{ duration: 0.2 }}
+        exit={shouldReduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
+        transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
       >
         {children}
       </motion.div>
@@ -42,6 +44,18 @@ function ModuleBoundary({ moduleName, children }: { moduleName: string; children
 }
 
 export default function App() {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        window.dispatchEvent(new Event("william:command-palette-toggle"));
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <ErrorBoundary>
       <Routes>

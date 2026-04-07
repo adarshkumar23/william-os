@@ -4,9 +4,9 @@ import { Outlet } from "react-router-dom";
 import { api } from "../services/api";
 import { NotificationItem } from "../types/api";
 import CommandPalette from "./CommandPalette";
+import Sidebar from "./layout/Sidebar";
+import Topbar from "./layout/Topbar";
 import NotificationsPanel from "./NotificationsPanel";
-import Sidebar from "./Sidebar";
-import TopBar from "./TopBar";
 
 export default function Layout() {
   const [openNotifications, setOpenNotifications] = useState(false);
@@ -43,12 +43,14 @@ export default function Layout() {
   );
 
   return (
-    <div className="flex min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.15),transparent_40%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.1),transparent_40%)]">
+    <div className="flex min-h-screen bg-background">
       <Sidebar />
       <div className="flex min-h-screen flex-1 flex-col">
-        <TopBar notificationsCount={unreadCount} onOpenNotifications={() => setOpenNotifications(true)} />
-        <main className="flex-1 p-4 lg:p-6">
-          <Outlet />
+        <Topbar notificationsCount={unreadCount} onOpenNotifications={() => setOpenNotifications(true)} />
+        <main className="flex-1">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-8 py-8">
+            <Outlet />
+          </div>
         </main>
       </div>
 

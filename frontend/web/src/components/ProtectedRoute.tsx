@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
-import LoadingSpinner from "./LoadingSpinner";
+import { SkeletonLoader } from "./ui";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function ProtectedRoute() {
@@ -8,7 +8,14 @@ export default function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return <LoadingSpinner fullPage label="Restoring session" />;
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <div className="w-full max-w-xl space-y-3">
+          <SkeletonLoader variant="card" />
+          <SkeletonLoader variant="text" lines={2} />
+        </div>
+      </div>
+    );
   }
 
   if (!isAuthenticated) {

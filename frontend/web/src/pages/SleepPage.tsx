@@ -1,13 +1,13 @@
 import { format } from "date-fns";
+import { motion, useReducedMotion } from "framer-motion";
+import { BedDouble, Moon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { BedDouble, Clock3, Sparkles } from "lucide-react";
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import ChartWrapper from "../components/ChartWrapper";
-import EmptyStatePanel from "../components/EmptyStatePanel";
-import StatCard from "../components/StatCard";
+import { fadeInUp, reduceMotion, staggerContainer } from "../lib/animations";
 import { api } from "../services/api";
 import { SleepRecommendation, SleepRecord, SleepStats } from "../types/api";
+import { AnimatedCounter, AppCard, EmptyState, ProgressRing, SectionHeader, SkeletonLoader } from "../components/ui";
 
 function extractDebtHours(value: Record<string, unknown> | null) {
   if (!value) {
@@ -36,8 +36,13 @@ export default function SleepPage() {
   const [stats, setStats] = useState<SleepStats | null>(null);
   const [debt, setDebt] = useState<Record<string, unknown> | null>(null);
   const [recommendation, setRecommendation] = useState<SleepRecommendation | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const shouldReduceMotion = useReducedMotion();
+  const fadeMotion = reduceMotion(shouldReduceMotion, fadeInUp);
 
   const load = async () => {
+    setLoading(true);
     const today = format(new Date(), "yyyy-MM-dd");
     const [sleepHistory, sleepStats, sleepDebt, recommendationForToday] = await Promise.all([
       api.sleep.history({ limit: 30, offset: 0 }),
@@ -56,6 +61,8 @@ export default function SleepPage() {
       const generated = await api.sleep.recommendationGenerate(today).catch(() => null);
       setRecommendation(generated);
     }
+
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -69,7 +76,7 @@ export default function SleepPage() {
     () =>
       [...history]
         .reverse()
-        .slice(0, 14)
+        .slice(0, 7)
         .map((record) => ({
           date: record.sleep_date.slice(5),
           quality: record.sleep_quality,
@@ -94,68 +101,87 @@ export default function SleepPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold">Sleep Recovery</h1>
-        <p className="text-sm text-[rgb(var(--text-dim))]">Quality trends, debt balance, and AI recommendations.</p>
-      </header>
+      <SectionHeader title="Sleep" subtitle="Recovery intelligence with debt tracking and circadian guidance." />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={BedDouble} label="Avg Quality" value={String(stats?.avg_quality_30d ?? "--")} trend="30 days" tone="success" />
-        <StatCard icon={Clock3} label="Avg Duration" value={`${stats?.avg_duration ?? "--"} min`} trend="per night" />
-        <StatCard icon={Sparkles} label="Consistency" value={`${stats?.consistency_score ?? "--"}%`} trend="circadian stability" />
-        <StatCard icon={Clock3} label="Sleep Debt" value={`${debtHours.toFixed(1)} h`} trend="to recover" tone={debtHours > 3 ? "danger" : "warning"} />
-      </section>
-
-      {history.length === 0 ? (
-        <EmptyStatePanel
-          title="No Sleep Data Yet"
-          description="This section tracks quality trends, debt recovery, and bedtime recommendations."
-          ctaLabel="Log your first sleep"
-          onCta={() => void onCreateStarterSleepLog()}
-          moduleKey="sleep"
-        />
-      ) : (
-        <section className="grid gap-4 lg:grid-cols-3">
-          <ChartWrapper title="Sleep quality trend" subtitle="Last 14 nights">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                <XAxis dataKey="date" tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
-                <YAxis yAxisId="left" domain={[0, 10]} tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" domain={[0, 12]} tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
-                <Tooltip />
-                <Line yAxisId="left" type="monotone" dataKey="quality" stroke="rgb(var(--primary))" strokeWidth={2.5} dot={{ r: 2.5 }} />
-                <Line yAxisId="right" type="monotone" dataKey="hours" stroke="rgb(var(--success))" strokeWidth={2.5} dot={{ r: 2.5 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </ChartWrapper>
-
-          <article className="card p-4 lg:col-span-1">
-            <h2 className="text-lg font-semibold">Debt meter</h2>
-            <p className="mt-1 text-sm text-[rgb(var(--text-dim))]">0h means fully recovered.</p>
-            <div className="mt-4 rounded-full bg-[rgb(var(--bg-muted))] p-1">
-              <div
-                className="h-4 rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 transition-all"
-                style={{ width: `${debtPercent}%` }}
-              />
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 lg:grid-cols-3">
+        <motion.div variants={fadeMotion}>
+          <AppCard hover className="h-full bg-indigo-950/25">
+            <p className="section-label">Sleep Score</p>
+            <div className="mt-4 flex items-center justify-center">
+              <ProgressRing value={Math.round(stats?.avg_quality_30d || 0) * 10} color="rgb(var(--color-info))" label="Quality" />
             </div>
-            <p className="mt-2 text-xs text-[rgb(var(--text-dim))]">{debtPercent}% of a 12-hour recovery threshold.</p>
+          </AppCard>
+        </motion.div>
 
-            <div className="mt-6 rounded-xl bg-[rgb(var(--bg-muted))] p-3 text-sm">
-              <p className="font-medium">Recommended bedtime</p>
-              <p className="data-font text-xl font-semibold">{recommendation?.recommended_bedtime ?? "--:--"}</p>
-              <p className="mt-2 text-xs text-[rgb(var(--text-dim))]">Wake: {recommendation?.recommended_wake_time ?? "--:--"}</p>
-            </div>
+        <motion.div variants={fadeMotion} className="lg:col-span-2">
+          <AppCard className="bg-indigo-950/20">
+            <p className="section-label">Hours Slept (avg)</p>
+            <p className="mt-3 text-4xl font-bold tabular-nums text-text-primary">
+              <AnimatedCounter value={Number(((stats?.avg_duration || 0) / 60).toFixed(1))} /> h
+            </p>
+            <p className="meta-copy mt-2">Recommended bedtime: {recommendation?.recommended_bedtime || "--:--"}</p>
+          </AppCard>
+        </motion.div>
+      </motion.section>
 
+      {loading ? (
+        <SkeletonLoader variant="card" />
+      ) : history.length === 0 ? (
+        <EmptyState
+          icon={<Moon className="h-6 w-6" />}
+          title="No sleep records yet"
+          description="Add your first sleep log to start debt and recovery tracking."
+          action={
             <button
               type="button"
-              onClick={() => void api.sleep.recommendationGenerate(format(new Date(), "yyyy-MM-dd")).then(setRecommendation)}
-              className="mt-4 rounded-xl bg-[rgb(var(--primary))] px-3 py-2 text-sm font-semibold text-white"
+              onClick={() => void onCreateStarterSleepLog()}
+              className="rounded-button bg-accent px-4 py-2 text-sm font-semibold text-white"
             >
-              Refresh recommendation
+              Log First Sleep
             </button>
-          </article>
-        </section>
+          }
+        />
+      ) : (
+        <>
+          <AppCard className="bg-indigo-950/15">
+            <p className="section-label">Sleep Debt Meter</p>
+            <div className="mt-4 h-4 rounded-full bg-surface-raised">
+              <div className="h-4 rounded-full bg-warning transition-all duration-700" style={{ width: `${debtPercent}%` }} />
+            </div>
+            <p className="meta-copy mt-2">
+              <AnimatedCounter value={Number(debtHours.toFixed(1))} />h debt remaining
+            </p>
+          </AppCard>
+
+          <AppCard className="bg-indigo-950/10">
+            <p className="section-label">7 Day Sleep Trend</p>
+            <div className="mt-4 h-60">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                  <XAxis dataKey="date" tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 10]} tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip />
+                  <Line dataKey="quality" stroke="rgb(var(--color-info))" strokeWidth={2.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </AppCard>
+
+          <AppCard>
+            <p className="section-label">Recent Records</p>
+            <div className="mt-4 space-y-2">
+              {history.slice(0, 8).map((item) => (
+                <div key={item.id} className="flex items-center justify-between rounded-lg border border-border bg-surface-raised p-3">
+                  <div>
+                    <p className="text-sm text-text-primary">{item.sleep_date}</p>
+                    <p className="meta-copy">Quality {item.sleep_quality}/10</p>
+                  </div>
+                  <p className="text-sm text-text-secondary">{(item.sleep_duration_minutes / 60).toFixed(1)}h</p>
+                </div>
+              ))}
+            </div>
+          </AppCard>
+        </>
       )}
     </div>
   );

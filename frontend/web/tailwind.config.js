@@ -5,31 +5,40 @@ export default {
   theme: {
     extend: {
       colors: {
-        william: {
-          ink: "#0B1020",
-          paper: "#F7F6F2",
-          mist: "#E8EEF5",
-          electric: "#0EA5E9",
-          ember: "#F97316",
-          mint: "#14B8A6",
-          berry: "#E11D48"
-        }
+        background: "rgb(var(--color-background) / <alpha-value>)",
+        surface: "rgb(var(--color-surface) / <alpha-value>)",
+        "surface-raised": "rgb(var(--color-surface-raised) / <alpha-value>)",
+        border: "rgb(var(--color-border) / <alpha-value>)",
+        "border-strong": "rgb(var(--color-border-strong) / <alpha-value>)",
+        "text-primary": "rgb(var(--color-text-primary) / <alpha-value>)",
+        "text-secondary": "rgb(var(--color-text-secondary) / <alpha-value>)",
+        "text-muted": "rgb(var(--color-text-muted) / <alpha-value>)",
+        accent: "rgb(var(--color-accent) / <alpha-value>)",
+        "accent-hover": "rgb(var(--color-accent-hover) / <alpha-value>)",
+        success: "rgb(var(--color-success) / <alpha-value>)",
+        warning: "rgb(var(--color-warning) / <alpha-value>)",
+        danger: "rgb(var(--color-danger) / <alpha-value>)",
+        info: "rgb(var(--color-info) / <alpha-value>)"
       },
       fontFamily: {
-        display: ["'Space Grotesk'", "sans-serif"],
-        body: ["'Source Sans 3'", "sans-serif"]
+        sans: ["Inter", "sans-serif"]
       },
-      boxShadow: {
-        glow: "0 0 0 1px rgba(14,165,233,.15), 0 20px 40px -20px rgba(14,165,233,.55)"
+      spacing: {
+        1: "4px",
+        2: "8px",
+        3: "12px",
+        4: "16px",
+        6: "24px",
+        8: "32px",
+        12: "48px",
+        16: "64px",
+        24: "96px"
       },
-      keyframes: {
-        rise: {
-          "0%": { opacity: "0", transform: "translateY(18px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" }
-        }
-      },
-      animation: {
-        rise: "rise .45s ease-out both"
+      borderRadius: {
+        card: "12px",
+        button: "8px",
+        input: "8px",
+        badge: "9999px"
       }
     }
   },

@@ -1,21 +1,26 @@
 import { format } from "date-fns";
+import { motion, useReducedMotion } from "framer-motion";
+import { Activity, Footprints, HeartPulse, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Flame, Footprints, HeartPulse, Moon } from "lucide-react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import ChartWrapper from "../components/ChartWrapper";
-import EmptyStatePanel from "../components/EmptyStatePanel";
-import StatCard from "../components/StatCard";
+import { fadeInUp, reduceMotion, staggerContainer } from "../lib/animations";
 import { api } from "../services/api";
 import { EnergyForecast, Workout } from "../types/api";
+import { AppCard, EmptyState, ProgressRing, SectionHeader, SkeletonLoader, StatCard } from "../components/ui";
 
 export default function FitnessPage() {
   const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
   const [energy, setEnergy] = useState<EnergyForecast | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const shouldReduceMotion = useReducedMotion();
+  const fadeMotion = reduceMotion(shouldReduceMotion, fadeInUp);
 
   const load = async () => {
+    setLoading(true);
     const today = format(new Date(), "yyyy-MM-dd");
     const [dailySummary, forecast, workoutRows, suggestionRows] = await Promise.all([
       api.fitness.summary(today).catch(() => null),
@@ -28,6 +33,7 @@ export default function FitnessPage() {
     setEnergy(forecast);
     setWorkouts(workoutRows);
     setSuggestions(suggestionRows);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -43,96 +49,114 @@ export default function FitnessPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold">Fitness Intelligence</h1>
-        <p className="text-sm text-[rgb(var(--text-dim))]">Body metrics, energy forecasting, and workout optimization.</p>
-      </header>
+      <SectionHeader title="Fitness" subtitle="Energy-aware movement and recovery signals across your day." />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Footprints} label="Steps" value={String(summary?.steps ?? "0")} trend="today" />
-        <StatCard icon={HeartPulse} label="Heart Rate" value={`${summary?.heart_rate ?? "--"} bpm`} trend="live" />
-        <StatCard icon={Flame} label="Calories" value={String(summary?.calories ?? "0")} trend="burned" tone="warning" />
-        <StatCard icon={Moon} label="Sleep Hours" value={String(summary?.sleep_hours ?? "--")} trend="last night" tone="success" />
-      </section>
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 md:grid-cols-2">
+        <motion.div variants={fadeMotion}>
+          <StatCard label="Step Count" value={Number(summary?.steps ?? 0)} trend={2.8} icon={<Footprints className="h-4 w-4" />} />
+        </motion.div>
+        <motion.div variants={fadeMotion}>
+          <StatCard label="Energy Score" value={Number(summary?.energy_score ?? 70)} trend={1.6} icon={<HeartPulse className="h-4 w-4" />} />
+        </motion.div>
+      </motion.section>
 
-      <ChartWrapper title="Energy forecast" subtitle="Predicted energy curve for today">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={energyPoints}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-            <XAxis dataKey="hour" tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
-            <YAxis domain={[0, 10]} tick={{ fill: "rgb(var(--text-dim))", fontSize: 11 }} />
-            <Tooltip />
-            <Line type="monotone" dataKey="score" stroke="rgb(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartWrapper>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <article className="card p-4">
-          <h2 className="text-lg font-semibold">Workout log</h2>
-          <div className="mt-3 space-y-2">
-            {workouts.length === 0 ? (
-              <EmptyStatePanel
-                title="No Workouts Logged"
-                description="This section tracks your movement, energy trends, and recovery patterns."
-                ctaLabel="Log your first workout"
-                onCta={() =>
-                  void api.fitness
-                    .logWorkout({
-                      workout_type: "Walk",
-                      duration_minutes: 30,
-                      calories_burned: 120,
-                      workout_date: format(new Date(), "yyyy-MM-dd"),
-                    })
-                    .then(load)
-                }
-                moduleKey="fitness"
-              />
-            ) : (
-              workouts.map((workout) => (
-                <div key={workout.id} className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] p-3">
-                  <p className="text-sm font-medium">{workout.activity}</p>
-                  <p className="text-xs text-[rgb(var(--text-dim))]">
-                    {workout.duration_minutes} min • {workout.workout_date}
-                  </p>
-                </div>
-              ))
-            )}
+      {loading ? (
+        <SkeletonLoader variant="card" />
+      ) : (
+        <AppCard>
+          <p className="section-label">Energy Curve</p>
+          <div className="mt-4 h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={energyPoints}>
+                <defs>
+                  <linearGradient id="energyFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="rgb(var(--color-accent))" stopOpacity={0.45} />
+                    <stop offset="95%" stopColor="rgb(var(--color-accent))" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                <XAxis dataKey="hour" tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} />
+                <YAxis domain={[0, 10]} tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} />
+                <Tooltip />
+                <Area type="monotone" dataKey="score" stroke="rgb(var(--color-accent))" fill="url(#energyFill)" strokeWidth={2.5} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
-          <button
-            type="button"
-            className="mt-3 rounded-xl bg-[rgb(var(--primary))] px-3 py-2 text-sm font-semibold text-white"
-            onClick={() =>
-              void api.fitness
-                .logWorkout({
-                  activity: "Focus walk",
-                  duration_minutes: 30,
-                  calories_burned: 120,
-                  workout_date: format(new Date(), "yyyy-MM-dd"),
-                })
-                .then(load)
-            }
-          >
-            Log Workout
-          </button>
-        </article>
+        </AppCard>
+      )}
 
-        <article className="card p-4">
-          <h2 className="text-lg font-semibold">Optimization suggestions</h2>
-          <div className="mt-3 space-y-2 text-sm">
-            {suggestions.length > 0 ? (
-              suggestions.map((tip, index) => (
-                <div key={`${tip}-${index}`} className="rounded-xl bg-[rgb(var(--bg-muted))] p-3">
-                  <Activity className="mr-2 inline h-4 w-4 text-[rgb(var(--success))]" />
-                  {tip}
-                </div>
-              ))
-            ) : (
-              <p className="text-[rgb(var(--text-dim))]">No AI tips yet. Generate an energy forecast first.</p>
-            )}
-          </div>
-        </article>
-      </section>
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 lg:grid-cols-3">
+        <motion.div variants={fadeMotion} className="lg:col-span-2">
+          {workouts.length === 0 ? (
+            <EmptyState
+              icon={<Activity className="h-6 w-6" />}
+              title="No workouts logged"
+              description="Log your first workout to unlock richer movement analysis."
+              action={
+                <button
+                  type="button"
+                  onClick={() =>
+                    void api.fitness
+                      .logWorkout({
+                        activity: "Focus walk",
+                        duration_minutes: 30,
+                        calories_burned: 120,
+                        workout_date: format(new Date(), "yyyy-MM-dd"),
+                      })
+                      .then(load)
+                  }
+                  className="inline-flex items-center gap-1 rounded-button bg-accent px-4 py-2 text-sm font-semibold text-white"
+                >
+                  <Plus className="h-4 w-4" /> Log Workout
+                </button>
+              }
+            />
+          ) : (
+            <AppCard>
+              <p className="section-label">Workout Log</p>
+              <div className="mt-4 space-y-2">
+                {workouts.map((workout) => (
+                  <div key={workout.id} className="flex items-center justify-between rounded-lg border border-border bg-surface-raised p-3">
+                    <div>
+                      <p className="text-sm font-medium text-text-primary">{workout.activity}</p>
+                      <p className="meta-copy">{workout.workout_date}</p>
+                    </div>
+                    <p className="text-sm text-text-secondary">
+                      {workout.duration_minutes} min • {workout.calories_burned} cal
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </AppCard>
+          )}
+        </motion.div>
+
+        <motion.div variants={fadeMotion}>
+          <AppCard>
+            <p className="section-label">Progress Rings</p>
+            <div className="mt-4 space-y-4">
+              <ProgressRing value={Math.min(100, Math.round((Number(summary?.steps || 0) / 10000) * 100))} label="Steps" />
+              <ProgressRing value={Math.min(100, Math.round((Number(summary?.calories || 0) / 800) * 100))} color="rgb(var(--color-warning))" label="Calories" />
+              <ProgressRing value={Math.min(100, Math.round((Number(summary?.heart_rate || 70) / 180) * 100))} color="rgb(var(--color-danger))" label="Heart Rate Zones" />
+            </div>
+          </AppCard>
+        </motion.div>
+      </motion.section>
+
+      <AppCard>
+        <p className="section-label">AI Optimization Notes</p>
+        <div className="mt-3 space-y-2">
+          {suggestions.length > 0 ? (
+            suggestions.map((tip, index) => (
+              <p key={`${tip}-${index}`} className="rounded-lg bg-surface-raised px-3 py-2 text-sm text-text-secondary">
+                {tip}
+              </p>
+            ))
+          ) : (
+            <p className="body-copy">No suggestions yet.</p>
+          )}
+        </div>
+      </AppCard>
     </div>
   );
 }

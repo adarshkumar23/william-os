@@ -1,14 +1,12 @@
+import { motion, useReducedMotion } from "framer-motion";
+import { Plus, Pill, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Pie, PieChart, ResponsiveContainer, Cell, Tooltip } from "recharts";
-import { Plus, TriangleAlert } from "lucide-react";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import EmptyStatePanel from "../components/EmptyStatePanel";
-import MedicineCard from "../components/MedicineCard";
-import Modal from "../components/Modal";
+import { fadeInUp, reduceMotion, staggerContainer } from "../lib/animations";
 import { api } from "../services/api";
 import { Medicine, MedicineReminder } from "../types/api";
-
-const COLORS = ["rgb(var(--success))", "rgb(var(--danger))"];
+import { AppCard, EmptyState, ProgressRing, SectionHeader, SkeletonLoader } from "../components/ui";
 
 export default function MedicinePage() {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
@@ -17,6 +15,7 @@ export default function MedicinePage() {
     null,
   );
   const [refills, setRefills] = useState<Medicine[]>([]);
+  const [loading, setLoading] = useState(true);
   const [openAdd, setOpenAdd] = useState(false);
   const [newMedicine, setNewMedicine] = useState({
     name: "",
@@ -28,7 +27,11 @@ export default function MedicinePage() {
     refill_reminder_days: 7,
   });
 
+  const shouldReduceMotion = useReducedMotion();
+  const fadeMotion = reduceMotion(shouldReduceMotion, fadeInUp);
+
   const load = async () => {
+    setLoading(true);
     const [medicineList, upcoming, adherenceStats, refillList] = await Promise.all([
       api.medicine.list({ limit: 100, offset: 0 }),
       api.medicine.upcoming(720).catch(() => []),
@@ -39,6 +42,7 @@ export default function MedicinePage() {
     setReminders(upcoming);
     setAdherence(adherenceStats as { total_taken: number; total_skipped: number; adherence_rate: number } | null);
     setRefills(refillList);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -55,20 +59,20 @@ export default function MedicinePage() {
     await load();
   };
 
-  const reminderMap = useMemo(() => {
-    const map = new Map<string, string>();
-    reminders.forEach((item) => {
-      if (!map.has(item.medicine_name)) {
-        map.set(item.medicine_name, item.scheduled_time);
-      }
-    });
-    return map;
-  }, [reminders]);
+  const chartData = useMemo(
+    () => [
+      { name: "Taken", value: adherence?.total_taken ?? 0 },
+      { name: "Skipped", value: adherence?.total_skipped ?? 0 },
+    ],
+    [adherence?.total_skipped, adherence?.total_taken],
+  );
 
-  const chartData = [
-    { name: "Taken", value: adherence?.total_taken ?? 0 },
-    { name: "Skipped", value: adherence?.total_skipped ?? 0 },
-  ];
+  const ringColor =
+    (adherence?.adherence_rate || 0) >= 85
+      ? "rgb(var(--color-success))"
+      : (adherence?.adherence_rate || 0) >= 65
+        ? "rgb(var(--color-warning))"
+        : "rgb(var(--color-danger))";
 
   const onCreate = async () => {
     await api.medicine.create(newMedicine);
@@ -87,137 +91,163 @@ export default function MedicinePage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Medicine</h1>
-          <p className="text-sm text-[rgb(var(--text-dim))]">Track doses, adherence, and refill risks.</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setOpenAdd(true)}
-          className="inline-flex items-center gap-2 rounded-xl bg-[rgb(var(--primary))] px-4 py-2 text-sm font-semibold text-white"
-        >
-          <Plus className="h-4 w-4" /> Add Medicine
-        </button>
-      </header>
+      <SectionHeader
+        title="Medicine"
+        subtitle="Calm daily adherence with reliable reminders and refill awareness."
+        action={
+          <button
+            type="button"
+            onClick={() => setOpenAdd(true)}
+            className="inline-flex items-center gap-2 rounded-button bg-accent px-4 py-2 text-sm font-semibold text-white"
+          >
+            <Plus className="h-4 w-4" /> Add Medicine
+          </button>
+        }
+      />
+
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 lg:grid-cols-3">
+        <motion.div variants={fadeMotion}>
+          <AppCard hover className="h-full">
+            <p className="section-label">Adherence</p>
+            <div className="mt-3">
+              <ProgressRing
+                value={Math.round(adherence?.adherence_rate || 0)}
+                color={ringColor}
+                label="30 Day"
+                sublabel="taken vs skipped"
+              />
+            </div>
+          </AppCard>
+        </motion.div>
+
+        <motion.div variants={fadeMotion} className="lg:col-span-2">
+          <AppCard>
+            <p className="section-label">Adherence Trend</p>
+            <div className="mt-4 h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <XAxis dataKey="name" stroke="rgb(var(--color-text-muted))" tick={{ fontSize: 11 }} />
+                  <YAxis stroke="rgb(var(--color-text-muted))" tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="rgb(var(--color-success))" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </AppCard>
+        </motion.div>
+      </motion.section>
 
       {refills.length > 0 ? (
-        <section className="space-y-2">
+        <div className="space-y-2">
           {refills.map((medicine) => (
-            <article key={medicine.id} className="card flex items-center gap-2 border-amber-500/40 bg-amber-500/10 p-3">
-              <TriangleAlert className="h-4 w-4 text-amber-400" />
-              <p className="text-sm">
-                Refill alert: <span className="font-semibold">{medicine.name}</span>
-              </p>
-            </article>
+            <div key={medicine.id} className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+              <TriangleAlert className="mr-1 inline h-4 w-4" /> Refill alert for {medicine.name}
+            </div>
           ))}
-        </section>
+        </div>
       ) : null}
 
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="space-y-3 lg:col-span-2">
-          {medicines.length === 0 ? (
-            <EmptyStatePanel
-              title="No Medicines Added"
-              description="This section tracks adherence trends, upcoming doses, and refill risk." 
-              ctaLabel="Log your first medicine"
-              onCta={() => setOpenAdd(true)}
-              moduleKey="medicine"
-            />
-          ) : (
-            medicines.map((medicine) => (
-              <MedicineCard
-                key={medicine.id}
-                medicine={medicine}
-                nextDue={reminderMap.get(medicine.name)}
-                onTake={onTake}
-                onSkip={onSkip}
-              />
-            ))
-          )}
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, idx) => (
+            <SkeletonLoader key={idx} variant="card" />
+          ))}
         </div>
-
-        <article className="card p-4">
-          <h3 className="text-lg font-semibold">Adherence (30 days)</h3>
-          <p className="mt-1 text-sm text-[rgb(var(--text-dim))]">{adherence?.adherence_rate ?? 0}% taken</p>
-          <div className="mt-4 h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={chartData} dataKey="value" innerRadius={55} outerRadius={90}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </article>
-      </section>
-
-      <Modal
-        open={openAdd}
-        title="Add Medicine"
-        onClose={() => setOpenAdd(false)}
-        footer={
-          <div className="flex justify-end gap-2">
+      ) : medicines.length === 0 ? (
+        <EmptyState
+          icon={<Pill className="h-6 w-6" />}
+          title="No medicines added"
+          description="Add your routine medicines to start adherence tracking and reminders."
+          action={
             <button
               type="button"
-              className="rounded-lg border border-[rgb(var(--border))] px-3 py-2 text-sm"
-              onClick={() => setOpenAdd(false)}
+              onClick={() => setOpenAdd(true)}
+              className="rounded-button bg-accent px-4 py-2 text-sm font-semibold text-white"
             >
-              Cancel
+              Add Medicine
             </button>
-            <button
-              type="button"
-              className="rounded-lg bg-[rgb(var(--primary))] px-3 py-2 text-sm font-semibold text-white"
-              onClick={() => void onCreate()}
-            >
-              Save
-            </button>
+          }
+        />
+      ) : (
+        <AppCard>
+          <p className="section-label">Upcoming Doses</p>
+          <div className="mt-4 space-y-2">
+            {medicines.map((medicine) => {
+              const nextDue = reminders.find((item) => item.medicine_name === medicine.name)?.scheduled_time || "Not scheduled";
+              return (
+                <div key={medicine.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-raised p-3">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">{medicine.name}</p>
+                    <p className="meta-copy">{medicine.dosage} • {nextDue}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void onTake(medicine)}
+                      className="rounded-button bg-success/15 px-3 py-1.5 text-xs font-medium text-success"
+                    >
+                      Take
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const reason = window.prompt("Skip reason") || "Skipped";
+                        void onSkip(medicine, reason);
+                      }}
+                      className="rounded-button border border-danger/40 px-3 py-1.5 text-xs font-medium text-danger"
+                    >
+                      Skip
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        }
-      >
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1">
-            <span className="text-sm font-medium">Name</span>
+        </AppCard>
+      )}
+
+      {openAdd ? (
+        <AppCard>
+          <p className="section-label">Add Medicine</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
             <input
               value={newMedicine.name}
               onChange={(event) => setNewMedicine((prev) => ({ ...prev, name: event.target.value }))}
-              className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2"
+              placeholder="Name"
+              className="rounded-input border border-border bg-surface-raised px-3 py-2 text-sm"
             />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">Dosage</span>
             <input
               value={newMedicine.dosage}
               onChange={(event) => setNewMedicine((prev) => ({ ...prev, dosage: event.target.value }))}
-              className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2"
+              placeholder="Dosage"
+              className="rounded-input border border-border bg-surface-raised px-3 py-2 text-sm"
             />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">Reminder time</span>
             <input
               value={newMedicine.reminder_times[0]}
-              onChange={(event) =>
-                setNewMedicine((prev) => ({ ...prev, reminder_times: [event.target.value || "08:00"] }))
-              }
-              className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2"
+              onChange={(event) => setNewMedicine((prev) => ({ ...prev, reminder_times: [event.target.value || "08:00"] }))}
+              placeholder="Reminder time"
+              className="rounded-input border border-border bg-surface-raised px-3 py-2 text-sm"
             />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">Times per day</span>
             <input
               type="number"
               min={1}
               max={12}
               value={newMedicine.times_per_day}
               onChange={(event) => setNewMedicine((prev) => ({ ...prev, times_per_day: Number(event.target.value) }))}
-              className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2"
+              placeholder="Times per day"
+              className="rounded-input border border-border bg-surface-raised px-3 py-2 text-sm"
             />
-          </label>
-        </div>
-      </Modal>
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" className="rounded-button border border-border px-4 py-2 text-sm" onClick={() => setOpenAdd(false)}>
+              Cancel
+            </button>
+            <button type="button" className="rounded-button bg-accent px-4 py-2 text-sm font-semibold text-white" onClick={() => void onCreate()}>
+              Save
+            </button>
+          </div>
+        </AppCard>
+      ) : null}
     </div>
   );
 }
