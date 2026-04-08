@@ -534,8 +534,8 @@ class SchedulerService:
 
         return {
             "date": request.target_date.isoformat(),
-            "wake_time": user.wake_time,
-            "sleep_time": user.sleep_time,
+            "wake_time": user.wake_time or "06:00",
+            "sleep_time": user.sleep_time or "22:30",
             "timezone": user.timezone,
             "fixed_blocks": [],
             "habits": habit_context,

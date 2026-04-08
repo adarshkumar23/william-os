@@ -18,7 +18,7 @@ function getStrength(password: string) {
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register, isAuthenticated } = useAuth();
+  const { register, isAuthenticated, isLoading, onboardingCompleted } = useAuth();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -28,10 +28,10 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate("/dashboard", { replace: true });
+    if (isAuthenticated && !isLoading) {
+      navigate(onboardingCompleted ? "/dashboard" : "/onboarding", { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, isLoading, navigate, onboardingCompleted]);
 
   const strength = useMemo(() => getStrength(password), [password]);
 
@@ -46,13 +46,13 @@ export default function RegisterPage() {
 
     setSubmitting(true);
     try {
-      await register({
+      const profile = await register({
         email: email.trim(),
         username: username.trim(),
         password,
         full_name: fullName.trim(),
       });
-      navigate("/dashboard", { replace: true });
+      navigate(profile.onboarding_completed ? "/dashboard" : "/onboarding", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to register");
     } finally {

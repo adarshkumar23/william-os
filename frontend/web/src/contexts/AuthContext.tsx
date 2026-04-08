@@ -8,6 +8,7 @@ type AuthState = {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  onboardingCompleted: boolean;
 };
 
 type AuthAction =
@@ -19,6 +20,7 @@ const initialState: AuthState = {
   user: null,
   isAuthenticated: Boolean(getAccessToken()),
   isLoading: true,
+  onboardingCompleted: false,
 };
 
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
@@ -31,25 +33,33 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         user: action.payload,
         isAuthenticated: Boolean(action.payload),
         isLoading: false,
+        onboardingCompleted: Boolean(action.payload?.onboarding_completed),
       };
     case "LOGOUT":
-      return { user: null, isAuthenticated: false, isLoading: false };
+      return {
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        onboardingCompleted: false,
+      };
     default:
       return state;
   }
 };
 
 type AuthContextValue = AuthState & {
-  login: (email: string, password: string, totpCode?: string) => Promise<void>;
+  login: (email: string, password: string, totpCode?: string) => Promise<UserProfile>;
   register: (payload: {
     email: string;
     username: string;
     password: string;
     full_name: string;
     timezone?: string;
-  }) => Promise<void>;
+  }) => Promise<UserProfile>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<AuthTokens | null>;
+  refreshUser: () => Promise<UserProfile | null>;
+  getPostLoginRoute: (profile?: UserProfile | null) => string;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -90,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         saveTokens(tokens);
         const me = await api.auth.me();
         dispatch({ type: "SET_USER", payload: me });
+        return me;
       },
       register: async ({ email, username, password, full_name, timezone }) => {
         dispatch({ type: "SET_LOADING", payload: true });
@@ -103,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         saveTokens(tokens);
         const me = await api.auth.me();
         dispatch({ type: "SET_USER", payload: me });
+        return me;
       },
       logout: async () => {
         try {
@@ -124,6 +136,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return null;
         }
       },
+      refreshUser: async () => {
+        try {
+          const me = await api.auth.me();
+          dispatch({ type: "SET_USER", payload: me });
+          return me;
+        } catch {
+          clearAuthStorage();
+          dispatch({ type: "LOGOUT" });
+          return null;
+        }
+      },
+      getPostLoginRoute: (profile?: UserProfile | null) =>
+        profile?.onboarding_completed ? "/dashboard" : "/onboarding",
     }),
     [state],
   );

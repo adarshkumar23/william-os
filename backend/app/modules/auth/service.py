@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import io
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 import pyotp
@@ -29,6 +29,8 @@ from app.modules.auth.models import LoginHistory, RefreshTokenBlacklist, User, U
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
 from app.modules.auth.schemas import (
+    OnboardingCompleteRequest,
+    OnboardingStatusResponse,
     TokenResponse,
     UserLogin,
     UserProfile,
@@ -300,6 +302,34 @@ class AuthService:
             raise NotFoundError("User", str(user_id))
         return UserProfile.model_validate(user)
 
+    async def get_onboarding_status(self, user_id: uuid.UUID) -> OnboardingStatusResponse:
+        user = await self._get_user_by_id(user_id)
+        if not user:
+            raise NotFoundError("User", str(user_id))
+        return OnboardingStatusResponse(onboarding_completed=bool(user.onboarding_completed))
+
+    async def complete_onboarding(
+        self,
+        user_id: uuid.UUID,
+        data: OnboardingCompleteRequest,
+    ) -> OnboardingStatusResponse:
+        user = await self._get_user_by_id(user_id)
+        if not user:
+            raise NotFoundError("User", str(user_id))
+
+        user.display_name = data.display_name.strip()
+        user.wake_time = data.wake_time
+        user.sleep_goal = data.sleep_goal
+        user.focus_areas = data.focus_areas
+        user.onboarding_completed = True
+
+        await self._create_starter_habits(user_id=user.id, focus_areas=data.focus_areas)
+        await self._generate_initial_schedule(user_id=user.id, focus_areas=data.focus_areas)
+        await self.db.flush()
+
+        logger.info("onboarding_completed", user_id=str(user.id), focus_areas=data.focus_areas)
+        return OnboardingStatusResponse(onboarding_completed=True)
+
     async def generate_totp_setup(self, user_id: uuid.UUID) -> dict[str, str]:
         user = await self._get_user_by_id(user_id)
         if user is None:
@@ -523,3 +553,124 @@ class AuthService:
                 return value or "unknown"
         except Exception:
             return "unknown"
+
+    async def _create_starter_habits(self, user_id: uuid.UUID, focus_areas: list[str]) -> None:
+        from app.modules.habits.models import Habit
+        from app.modules.habits.schemas import HabitCreate
+        from app.modules.habits.service import HabitsService
+
+        habit_service = HabitsService(self.db)
+        existing_result = await self.db.execute(select(Habit.name).where(Habit.user_id == user_id))
+        existing_names = {name.lower() for name in existing_result.scalars().all()}
+
+        templates_by_focus = {
+            "fitness": [
+                HabitCreate(
+                    name="30-min movement",
+                    description="Daily movement to keep energy stable.",
+                    category="fitness",
+                    icon="FIT",
+                    preferred_time="07:00",
+                    duration_minutes=30,
+                    schedule_category="fitness",
+                )
+            ],
+            "study": [
+                HabitCreate(
+                    name="Deep study sprint",
+                    description="One focused session with no distractions.",
+                    category="study",
+                    icon="BOOK",
+                    preferred_time="09:00",
+                    duration_minutes=60,
+                    schedule_category="study",
+                )
+            ],
+            "work": [
+                HabitCreate(
+                    name="Priority planning",
+                    description="Define top three outcomes for the day.",
+                    category="work",
+                    icon="PLAN",
+                    preferred_time="08:30",
+                    duration_minutes=15,
+                    schedule_category="routine",
+                )
+            ],
+            "sleep": [
+                HabitCreate(
+                    name="Wind-down ritual",
+                    description="No screens, low light, and short reflection.",
+                    category="health",
+                    icon="SLEEP",
+                    preferred_time="21:30",
+                    duration_minutes=20,
+                    schedule_category="routine",
+                )
+            ],
+            "mindfulness": [
+                HabitCreate(
+                    name="Mind reset",
+                    description="Short breathwork or meditation block.",
+                    category="personal",
+                    icon="CALM",
+                    preferred_time="20:30",
+                    duration_minutes=10,
+                    schedule_category="routine",
+                )
+            ],
+            "trading": [
+                HabitCreate(
+                    name="Market review",
+                    description="Review watchlist, risk, and key levels.",
+                    category="trading",
+                    icon="TRADE",
+                    preferred_time="18:00",
+                    duration_minutes=30,
+                    schedule_category="work",
+                )
+            ],
+        }
+
+        fallback = HabitCreate(
+            name="Daily reflection",
+            description="Quick check-in to calibrate the next day.",
+            category="personal",
+            icon="NOTE",
+            preferred_time="21:00",
+            duration_minutes=10,
+            schedule_category="routine",
+        )
+
+        selected_templates = []
+        for focus in focus_areas:
+            selected_templates.extend(templates_by_focus.get(focus, []))
+        if not selected_templates:
+            selected_templates = [fallback]
+
+        for template in selected_templates:
+            if template.name.lower() in existing_names:
+                continue
+            await habit_service.create_habit(user_id=user_id, data=template)
+            existing_names.add(template.name.lower())
+
+    async def _generate_initial_schedule(self, user_id: uuid.UUID, focus_areas: list[str]) -> None:
+        from app.modules.scheduler.schemas import ScheduleGenerateRequest
+        from app.modules.scheduler.service import SchedulerService
+
+        scheduler = SchedulerService(self.db)
+        request = ScheduleGenerateRequest(
+            target_date=date.today(),
+            extra_context={"priorities": focus_areas},
+        )
+        try:
+            await scheduler.generate_daily_plan(user_id=user_id, request=request)
+        except ValidationError:
+            # Existing plan for today is acceptable during onboarding completion.
+            pass
+        except Exception as exc:
+            logger.warning(
+                "onboarding_schedule_generation_failed",
+                user_id=str(user_id),
+                error=str(exc),
+            )

@@ -889,8 +889,15 @@ def scan_predictive_warnings():
     _run_async(_run())
 
 
-def _is_wake_time_approaching(wake_time_str: str, now: datetime, offset_minutes: int) -> bool:
+def _is_wake_time_approaching(
+    wake_time_str: str | None,
+    now: datetime,
+    offset_minutes: int,
+) -> bool:
     """Check whether wake_time is within the next prewake offset window (UTC)."""
+    if not wake_time_str:
+        return False
+
     try:
         wake_time = datetime.strptime(wake_time_str, "%H:%M").time()
     except ValueError:
@@ -905,7 +912,7 @@ def _is_wake_time_approaching(wake_time_str: str, now: datetime, offset_minutes:
 
 
 def _is_briefing_due_now(
-    wake_time_str: str,
+    wake_time_str: str | None,
     timezone_name: str | None,
     now_utc: datetime,
     offset_minutes: int = 5,
@@ -916,6 +923,9 @@ def _is_briefing_due_now(
         tz = ZoneInfo(timezone_name or "UTC")
     except Exception:
         tz = ZoneInfo("UTC")
+
+    if not wake_time_str:
+        return False
 
     try:
         wake_clock = datetime.strptime(wake_time_str, "%H:%M").time()

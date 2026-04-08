@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.security import decode_token
 from app.modules.auth.schemas import (
     LoginHistoryResponse,
+    OnboardingCompleteRequest,
     SessionDeviceResponse,
     TokenRefresh,
     TotpSetupResponse,
@@ -133,6 +134,27 @@ async def get_me(
     service = AuthService(db)
     profile = await service.get_profile(user_id)
     return success(profile.model_dump(mode="json"))
+
+
+@router.get("/onboarding/status")
+async def get_onboarding_status(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    status = await service.get_onboarding_status(user_id)
+    return success(status.model_dump(mode="json"))
+
+
+@router.post("/onboarding/complete")
+async def complete_onboarding(
+    data: OnboardingCompleteRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    status = await service.complete_onboarding(user_id=user_id, data=data)
+    return success(status.model_dump(mode="json"))
 
 
 @router.get("/2fa/setup")

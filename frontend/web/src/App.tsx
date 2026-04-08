@@ -13,6 +13,7 @@ import HabitsPage from "./pages/Habits";
 import JournalPage from "./pages/JournalPage";
 import LoginPage from "./pages/LoginPage";
 import MedicinePage from "./pages/MedicinePage";
+import OnboardingPage from "./pages/OnboardingPage";
 import RegisterPage from "./pages/RegisterPage";
 import RulesPage from "./pages/RulesPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -64,6 +65,8 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
 
         <Route element={<ProtectedRoute />}>
+          <Route path="/onboarding" element={<OnboardingPage />} />
+
           <Route element={<Layout />}>
             <Route
               path="/dashboard"

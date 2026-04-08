@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 
 export default function ProtectedRoute() {
   const location = useLocation();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -20,6 +20,10 @@ export default function ProtectedRoute() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (user && !user.onboarding_completed && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return <Outlet />;

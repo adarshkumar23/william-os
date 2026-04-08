@@ -19,11 +19,26 @@ export type UserProfile = {
   email: string;
   username: string;
   full_name?: string;
+  display_name?: string | null;
   timezone?: string;
   role?: string;
-  wake_time?: string;
+  wake_time?: string | null;
   sleep_time?: string;
+  sleep_goal?: number | null;
+  focus_areas?: string[];
+  onboarding_completed?: boolean;
   [key: string]: unknown;
+};
+
+export type OnboardingStatus = {
+  onboarding_completed: boolean;
+};
+
+export type OnboardingCompletePayload = {
+  display_name: string;
+  wake_time: string;
+  sleep_goal: number;
+  focus_areas: string[];
 };
 
 export type AuthTokens = {

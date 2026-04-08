@@ -20,6 +20,19 @@ const AGENT_COLORS: Record<AgentName, string> = {
   recovery: "bg-rose-500/20 text-rose-400 border-rose-500/20",
 };
 
+function getWilliamModeByHour(hour: number): string {
+  if (hour >= 5 && hour < 12) {
+    return "Morning Focus";
+  }
+  if (hour >= 12 && hour < 17) {
+    return "Afternoon Execution";
+  }
+  if (hour >= 17 && hour < 22) {
+    return "Evening Reflection";
+  }
+  return "Night Recovery";
+}
+
 export default function ChatPage() {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<ChatSessionListItem[]>([]);
@@ -28,6 +41,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
+  const [williamMode, setWilliamMode] = useState(() => getWilliamModeByHour(new Date().getHours()));
   const [error, setError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -51,6 +65,13 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, chatLoading]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setWilliamMode(getWilliamModeByHour(new Date().getHours()));
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const loadSessions = async () => {
     try {
@@ -289,6 +310,9 @@ export default function ChatPage() {
               </h2>
               <p className="text-xs text-text-muted capitalize">
                 {sessions.find((s) => s.id === activeSessionId)?.agent_name || "William OS"} Agent
+              </p>
+              <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-accent">
+                William current mode: {williamMode}
               </p>
             </div>
           </div>

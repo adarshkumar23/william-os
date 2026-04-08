@@ -52,10 +52,14 @@ class UserProfile(BaseModel):
     email: str
     username: str
     full_name: str
+    display_name: str | None
     role: str
     timezone: str
-    wake_time: str
+    wake_time: str | None
     sleep_time: str
+    sleep_goal: int | None
+    focus_areas: list[str] = Field(default_factory=list)
+    onboarding_completed: bool = False
     is_verified: bool
     totp_enabled: bool
     permission_scopes: list[str] = Field(default_factory=list)
@@ -69,6 +73,25 @@ class UserPreferencesUpdate(BaseModel):
     wake_time: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
     sleep_time: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
     preferences: dict | None = None
+
+
+class OnboardingStatusResponse(BaseModel):
+    onboarding_completed: bool
+
+
+class OnboardingCompleteRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=100)
+    wake_time: str = Field(pattern=r"^\d{2}:\d{2}$")
+    sleep_goal: int = Field(ge=5, le=12)
+    focus_areas: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("focus_areas")
+    @classmethod
+    def normalize_focus_areas(cls, values: list[str]) -> list[str]:
+        cleaned = [v.strip().lower() for v in values if v and v.strip()]
+        if not cleaned:
+            raise ValueError("At least one focus area is required")
+        return sorted(list(dict.fromkeys(cleaned)))
 
 
 class PasswordChange(BaseModel):

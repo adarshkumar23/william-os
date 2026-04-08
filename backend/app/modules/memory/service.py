@@ -248,8 +248,8 @@ class MemoryService:
 
         if not rows:
             user = await self.db.get(User, user_id)
-            wake = user.wake_time if user else "06:00"
-            sleep = user.sleep_time if user else "22:30"
+            wake = (user.wake_time if user else None) or "06:00"
+            sleep = (user.sleep_time if user else None) or "22:30"
             return (
                 MemoryType.PREFERENCE,
                 "preferred_wake_sleep_time",

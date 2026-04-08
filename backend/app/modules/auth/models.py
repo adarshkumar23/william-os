@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, String, Text
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,8 +41,16 @@ class User(Base):
 
     # Profile & Preferences
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata")
-    wake_time: Mapped[str] = mapped_column(String(5), default="06:00")  # HH:MM
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    wake_time: Mapped[str | None] = mapped_column(
+        String(5),
+        default="06:00",
+        nullable=True,
+    )  # HH:MM
     sleep_time: Mapped[str] = mapped_column(String(5), default="22:30")
+    sleep_goal: Mapped[int | None] = mapped_column(Integer, nullable=True)  # target hours
+    focus_areas: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     preferences: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     # Security

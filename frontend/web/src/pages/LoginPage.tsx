@@ -7,7 +7,7 @@ import { useAuth } from "../contexts/AuthContext";
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, login, isLoading } = useAuth();
+  const { isAuthenticated, login, isLoading, onboardingCompleted } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,10 +16,10 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate("/dashboard", { replace: true });
+    if (isAuthenticated && !isLoading) {
+      navigate(onboardingCompleted ? "/dashboard" : "/onboarding", { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, isLoading, navigate, onboardingCompleted]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -36,9 +36,10 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      await login(email.trim(), password, totpCode.trim() || undefined);
+      const profile = await login(email.trim(), password, totpCode.trim() || undefined);
       const from = (location.state as { from?: string } | null)?.from;
-      navigate(from || "/dashboard", { replace: true });
+      const target = profile.onboarding_completed ? from || "/dashboard" : "/onboarding";
+      navigate(target, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");
     } finally {
