@@ -21,11 +21,15 @@ from app.modules.chat.executor import ActionExecutor, ActionParser
 from app.modules.chat.models import AgentName, ChatMessage, ChatSession, MessageRole
 from app.modules.chat.prompts import get_agent_prompt
 from app.modules.decisions.service import DecisionService
+from app.modules.fitness.models import WorkoutLog
 from app.modules.fitness.service import FitnessService
+from app.modules.intelligence.models import PredictiveWarning
 from app.modules.intelligence.service import LifeScoreService
+from app.modules.journal.models import JournalEntry
 from app.modules.medicine.service import MedicineService
 from app.modules.memory.service import MemoryService
 from app.modules.scheduler.service import SchedulerService
+from app.modules.sleep.models import SleepRecord
 from app.modules.sleep.service import SleepService
 from app.modules.study.service import StudyService
 from app.modules.trading.service import TradingService
@@ -109,10 +113,20 @@ class ChatService:
         session.updated_at = datetime.now(UTC)
         await self.db.flush()
 
-        history = await self.get_messages(session_id, user_id, limit=20)
+        history = await self.get_messages(session_id, user_id, limit=30)
 
         # Determine and fetch context based on agent
         context = await self._gather_context(user_id, session.agent_name)
+
+        # If session has > 30 messages, summarize older ones
+        all_msgs = await self.get_messages(session_id, user_id, limit=100)
+        if len(all_msgs) > 30:
+            older_msgs = all_msgs[:-30]
+            summary = await self._summarize_conversation(older_msgs)
+            # Inject summary into context
+            context["conversation_summary"] = f"Earlier in this conversation: {summary}"
+            history = all_msgs[-30:]  # Use only recent 30
+
         system_prompt = get_agent_prompt(session.agent_name).format(**context)
 
         # Call Gemini
@@ -216,6 +230,13 @@ class ChatService:
             "trading_data": "None",
             "executive_data": "None",
             "recovery_data": "None",
+            "burnout_score": 0,
+            "recent_mood": "unknown",
+            "sleep_trend": "unknown",
+            "last_workout": "none",
+            "calendar_today": "None",
+            "recent_journal": "None",
+            "conversation_summary": "",
         }
 
         try:
@@ -225,6 +246,7 @@ class ChatService:
                 context["schedule_summary"] = ", ".join(
                     f"{b.start_time.strftime('%H:%M')} {b.title}" for b in plan.blocks[:5]
                 )
+                context["calendar_today"] = context["schedule_summary"]
 
             if agent_name in [AgentName.OS, AgentName.HEALTH, AgentName.RECOVERY]:
                 sleep = SleepService(self.db)
@@ -235,9 +257,73 @@ class ChatService:
                 fitness = FitnessService(self.db)
                 en = await fitness.get_energy_forecast(user_id, date.today())
                 if en and en.hourly_scores:
-                    context["energy"] = (
-                        list(en.hourly_scores.values())[0] if en.hourly_scores else 50
+                    context["energy"] = next(iter(en.hourly_scores.values()), 50)
+
+                sleep_rows_result = await self.db.execute(
+                    select(SleepRecord.sleep_duration_minutes)
+                    .where(SleepRecord.user_id == user_id)
+                    .order_by(desc(SleepRecord.sleep_date), desc(SleepRecord.created_at))
+                    .limit(6)
+                )
+                recent_sleep_rows = [
+                    float(v or 0.0) / 60.0 for v in sleep_rows_result.scalars().all()
+                ]
+                if len(recent_sleep_rows) >= 6:
+                    recent_avg = sum(recent_sleep_rows[:3]) / 3.0
+                    previous_avg = sum(recent_sleep_rows[3:6]) / 3.0
+                    if recent_avg > previous_avg + 0.3:
+                        context["sleep_trend"] = "improving"
+                    elif recent_avg < previous_avg - 0.3:
+                        context["sleep_trend"] = "declining"
+                    else:
+                        context["sleep_trend"] = "stable"
+
+                journal_result = await self.db.execute(
+                    select(JournalEntry.mood, JournalEntry.word_count, JournalEntry.entry_date)
+                    .where(JournalEntry.user_id == user_id)
+                    .order_by(desc(JournalEntry.entry_date), desc(JournalEntry.created_at))
+                    .limit(1)
+                )
+                latest_journal = journal_result.first()
+                if latest_journal:
+                    mood, word_count, entry_date = latest_journal
+                    mood_value = str(getattr(mood, "value", mood or "unknown"))
+                    context["recent_mood"] = mood_value
+                    context["recent_journal"] = (
+                        f"{entry_date.isoformat()} mood={mood_value} words={int(word_count or 0)}"
                     )
+
+                workout_result = await self.db.execute(
+                    select(
+                        WorkoutLog.workout_type,
+                        WorkoutLog.duration_minutes,
+                        WorkoutLog.workout_date,
+                    )
+                    .where(WorkoutLog.user_id == user_id)
+                    .order_by(desc(WorkoutLog.workout_date), desc(WorkoutLog.created_at))
+                    .limit(1)
+                )
+                latest_workout = workout_result.first()
+                if latest_workout:
+                    workout_type, duration_minutes, workout_date = latest_workout
+                    context["last_workout"] = (
+                        f"{workout_type} {int(duration_minutes)}m on {workout_date.isoformat()}"
+                    )
+
+                burnout_result = await self.db.execute(
+                    select(PredictiveWarning.details)
+                    .where(PredictiveWarning.user_id == user_id)
+                    .where(PredictiveWarning.warning_type == "burnout_risk")
+                    .where(PredictiveWarning.is_active.is_(True))
+                    .order_by(
+                        desc(PredictiveWarning.detected_at),
+                        desc(PredictiveWarning.created_at),
+                    )
+                    .limit(1)
+                )
+                burnout_details = burnout_result.scalar_one_or_none() or {}
+                if isinstance(burnout_details, dict):
+                    context["burnout_score"] = int(float(burnout_details.get("score", 0) or 0))
 
             if agent_name in [AgentName.OS, AgentName.HEALTH]:
                 meds = MedicineService(self.db)
@@ -260,7 +346,8 @@ class ChatService:
                 decs = await dec.list_decisions(user_id)
                 context["decisions_count"] = len([d for d in decs if d.status == "pending"])
                 context["executive_data"] = (
-                    f"Pending decisions: {context['decisions_count']}\nSchedule: {context['schedule_summary']}"
+                    f"Pending decisions: {context['decisions_count']}\n"
+                    f"Schedule: {context['schedule_summary']}"
                 )
 
             if agent_name in [AgentName.OS]:
@@ -270,13 +357,32 @@ class ChatService:
 
             if agent_name in [AgentName.RECOVERY]:
                 context["recovery_data"] = (
-                    "Energy forecast suggests dips inside low hours. Please ensure prompt alignment."
+                    "Energy forecast suggests dips inside low hours. "
+                    "Please ensure prompt alignment."
                 )
 
         except Exception as e:
             logger.warning("chat_context_gather_error", error=str(e))
 
         return context
+
+    async def _summarize_conversation(self, messages: list[ChatMessage]) -> str:
+        if not messages:
+            return ""
+        text = "\n".join(f"{m.role.value}: {m.content[:200]}" for m in messages[-20:])
+        prompt = (
+            "Summarize this conversation in 2 sentences, focusing on key topics and "
+            f"decisions:\n{text}"
+        )
+        try:
+            summary = await self._call_gemini(
+                "You are a conversation summarizer.",
+                [],
+                prompt,
+            )
+            return summary[:300]
+        except Exception:
+            return ""
 
     async def _call_gemini(
         self, system_prompt: str, history: list[ChatMessage], new_content: str
@@ -298,7 +404,21 @@ class ChatService:
         payload = {
             "systemInstruction": {"role": "system", "parts": [{"text": system_prompt}]},
             "contents": [m for m in messages if m["role"] != "system"],
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1024},
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 2048,
+                "topP": 0.95,
+                "topK": 40,
+            },
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                },
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ],
         }
 
         url = (

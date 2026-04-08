@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, timedelta
 from statistics import mean
 from time import perf_counter
@@ -60,6 +60,7 @@ class MemoryService:
         memories.append(await self._energy_after_workout_memory(user_id, cutoff))
         memories.append(await self._sleep_performance_memory(user_id, cutoff))
         memories.append(await self._habits_good_days_memory(user_id, cutoff))
+        memories.append(await self._chat_topic_memory(user_id, cutoff))
 
         saved: list[UserMemoryResponse] = []
         for memory_type, key, value, confidence, source_modules in memories:
@@ -509,6 +510,84 @@ class MemoryService:
             },
             0.4 if not ranked else min(0.92, 0.52 + sum(habit_good_counts.values()) / 60.0),
             ["habits", "intelligence"],
+        )
+
+    async def _chat_topic_memory(
+        self,
+        user_id: uuid.UUID,
+        cutoff: date,
+    ) -> tuple[MemoryType, str, dict, float, list[str]]:
+        from app.modules.chat.models import ChatMessage, MessageRole
+
+        result = await self.db.execute(
+            select(ChatMessage.content)
+            .where(ChatMessage.user_id == user_id)
+            .where(ChatMessage.role == MessageRole.USER)
+            .where(ChatMessage.created_at >= datetime.combine(cutoff, datetime.min.time()))
+            .order_by(desc(ChatMessage.created_at))
+            .limit(50)
+        )
+        messages = result.scalars().all()
+        if not messages:
+            return (
+                MemoryType.PREFERENCE,
+                "frequent_chat_topics",
+                {"topics": [], "message": "No chat history yet"},
+                0.3,
+                ["chat"],
+            )
+
+        stop_words = {
+            "the",
+            "a",
+            "an",
+            "is",
+            "are",
+            "was",
+            "were",
+            "i",
+            "my",
+            "me",
+            "you",
+            "your",
+            "what",
+            "how",
+            "can",
+            "will",
+            "do",
+            "did",
+            "have",
+            "has",
+            "to",
+            "in",
+            "of",
+            "and",
+            "or",
+            "but",
+            "for",
+            "with",
+            "it",
+            "this",
+            "that",
+            "be",
+            "at",
+            "on",
+        }
+        words: list[str] = []
+        for msg in messages:
+            words.extend(
+                w.lower()
+                for w in str(msg).split()
+                if w.lower() not in stop_words and len(w) > 3
+            )
+
+        top_topics = [word for word, _count in Counter(words).most_common(10)]
+        return (
+            MemoryType.PREFERENCE,
+            "frequent_chat_topics",
+            {"topics": top_topics, "total_messages": len(messages)},
+            0.6,
+            ["chat"],
         )
 
     async def _generate_ai_insights(self, summary: list[dict]) -> list[str]:
