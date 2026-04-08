@@ -396,6 +396,14 @@ class AuthService:
             f"{settings.base_url.rstrip('/')}/register?invite={token}"
             f"&email={data.email}&role={data.role}"
         )
+        # Send invite email
+        try:
+            owner = await self._get_user_by_id(owner_user_id)
+            owner_name = (owner.display_name or owner.full_name or owner.username) if owner else "William OS"
+            await send_invite_email(str(data.email), invite_link, data.role, owner_name)
+        except Exception as e:
+            logger.warning("invite_email_failed", error=str(e))
+
         return {
             "status": "created",
             "invite_link": invite_link,
