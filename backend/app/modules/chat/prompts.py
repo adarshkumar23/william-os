@@ -5,7 +5,6 @@ Definitions for available actions in the chat module.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,6 +43,19 @@ You can take real actions when the user asks. Use action blocks exactly like thi
 type: ACTION_TYPE
 params: {{"key": "value"}}
 </action>
+
+You have the ability to manage the user's Google Calendar.
+When the user asks you to add, create, schedule, or book something on their calendar, use:
+<action>{"type": "calendar_create", "title": "EVENT_TITLE", "start": "YYYY-MM-DDTHH:MM:SS", "end": "YYYY-MM-DDTHH:MM:SS", "description": "OPTIONAL"}</action>
+
+When the user asks what is on their calendar or upcoming schedule, use:
+<action>{"type": "calendar_list", "days": 7}</action>
+
+When the user asks to delete or remove a calendar event, use:
+<action>{"type": "calendar_delete", "event_id": "EVENT_ID"}</action>
+
+Always confirm what you did after executing a calendar action.
+If Google Calendar is not connected, tell the user to connect it in Settings.
 
 Examples of what you can do:
 - "I feel sleepy" → <action>\ntype: SET_ALARM\nparams: {{"time": "21:00", "label": "Sleep time"}}\n</action>

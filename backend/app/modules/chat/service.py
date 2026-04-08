@@ -6,6 +6,7 @@ Handles standard messaging, calling Gemini, parsing actions, and retrieving cont
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, date, datetime
 from time import perf_counter
 from uuid import UUID
@@ -17,26 +18,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
-from app.modules.auth.models import User
 from app.modules.auth.service import AuthService
+from app.modules.chat.calendar_actions import execute_calendar_action
+from app.modules.chat.executor import ActionExecutor, ActionParser
 from app.modules.chat.models import AgentName, ChatMessage, ChatSession, MessageRole
 from app.modules.chat.prompts import get_agent_prompt
-from app.modules.chat.executor import ActionExecutor, ActionParser
-
-from app.modules.memory.service import MemoryService
-from app.modules.intelligence.service import LifeScoreService
-from app.modules.scheduler.service import SchedulerService
+from app.modules.decisions.service import DecisionService
 from app.modules.fitness.service import FitnessService
-from app.modules.sleep.service import SleepService
-from app.modules.habits.service import HabitsService
+from app.modules.intelligence.service import LifeScoreService
 from app.modules.medicine.service import MedicineService
+from app.modules.memory.service import MemoryService
+from app.modules.scheduler.service import SchedulerService
+from app.modules.sleep.service import SleepService
 from app.modules.study.service import StudyService
 from app.modules.trading.service import TradingService
-from app.modules.decisions.service import DecisionService
-from app.modules.journal.service import JournalService
-from app.modules.briefing.service import MorningBriefingService
 
 logger = structlog.get_logger(__name__)
+ACTION_TAG_PATTERN = re.compile(r"<action>\s*(.*?)\s*</action>", re.DOTALL)
 
 
 class ChatService:
@@ -133,6 +131,35 @@ class ChatService:
                     "message": res.message,
                     "data": res.data
                 })
+
+        # Parse and execute JSON calendar actions:
+        # <action>{"type": "calendar_create", ...}</action>
+        for payload in ACTION_TAG_PATTERN.findall(assistant_content):
+            try:
+                action_json = json.loads(payload)
+            except Exception:
+                continue
+
+            if not isinstance(action_json, dict):
+                continue
+
+            action_type = str(action_json.get("type") or "").strip().lower()
+            if action_type not in {"calendar_create", "calendar_list", "calendar_delete"}:
+                continue
+
+            result_text = await execute_calendar_action(action_json, self.db, user_id)
+            actions_taken.append(
+                {
+                    "type": action_type,
+                    "params": action_json,
+                    "success": True,
+                    "message": result_text,
+                    "data": None,
+                }
+            )
+
+        # Remove JSON action tags from visible response text.
+        display_text = ACTION_TAG_PATTERN.sub("", display_text).strip()
         
         # Prepare final assistant message
         if not display_text.strip():
