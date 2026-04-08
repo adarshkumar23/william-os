@@ -103,6 +103,47 @@ async def scan_predictive_warnings(
     return success([item.model_dump(mode="json") for item in warnings])
 
 
+@router.post("/scan")
+async def scan_predictive_warnings_alias(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    warnings = await service.scan_user(user_id=user_id)
+    return success([item.model_dump(mode="json") for item in warnings])
+
+
+@router.patch("/warnings/{warning_id}/resolve")
+async def resolve_predictive_warning(
+    warning_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    warning = await service.resolve_warning(user_id=user_id, warning_id=warning_id)
+    return success(warning.model_dump(mode="json"))
+
+
+@router.get("/burnout/score")
+async def get_burnout_score(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    payload = await service.get_burnout_score(user_id=user_id)
+    return success(payload)
+
+
+@router.post("/burnout/intervene")
+async def intervene_burnout(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    payload = await service.intervene_burnout(user_id=user_id)
+    return success(payload)
+
+
 @router.get("/timeline")
 async def get_timeline(
     days: int = Query(default=90, ge=7, le=365),

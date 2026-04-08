@@ -12,7 +12,10 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.modules.auth.schemas import (
+    AdminUserUpdateRequest,
+    FamilyInviteRequest,
     LoginHistoryResponse,
+    ProfileUpdateRequest,
     SessionDeviceResponse,
     TokenRefresh,
     TotpSetupResponse,
@@ -134,6 +137,78 @@ async def get_me(
     service = AuthService(db)
     profile = await service.get_profile(user_id)
     return success(profile.model_dump(mode="json"))
+
+
+@router.patch("/profile")
+async def update_profile(
+    payload: ProfileUpdateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    profile = await service.update_profile(user_id=user_id, data=payload)
+    return success(profile.model_dump(mode="json"))
+
+
+@router.get("/admin/users")
+async def admin_list_users(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    users = await service.admin_list_users(owner_user_id=user_id)
+    return success([item.model_dump(mode="json") for item in users])
+
+
+@router.patch("/admin/users/{target_user_id}")
+async def admin_update_user(
+    target_user_id: uuid.UUID,
+    payload: AdminUserUpdateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    updated = await service.admin_update_user(
+        owner_user_id=user_id,
+        target_user_id=target_user_id,
+        data=payload,
+    )
+    return success(updated.model_dump(mode="json"))
+
+
+@router.delete("/admin/users/{target_user_id}")
+async def admin_deactivate_user(
+    target_user_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    updated = await service.admin_deactivate_user(
+        owner_user_id=user_id,
+        target_user_id=target_user_id,
+    )
+    return success(updated.model_dump(mode="json"))
+
+
+@router.get("/admin/stats")
+async def admin_stats(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    stats = await service.admin_stats(owner_user_id=user_id)
+    return success(stats.model_dump(mode="json"))
+
+
+@router.post("/family/invite")
+async def invite_family_member(
+    payload: FamilyInviteRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AuthService(db)
+    response = await service.invite_family(owner_user_id=user_id, data=payload)
+    return success(response)
 
 
 @router.get("/2fa/setup")

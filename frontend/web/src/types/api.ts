@@ -20,6 +20,7 @@ export type UserProfile = {
   username: string;
   full_name?: string;
   display_name?: string | null;
+  avatar_url?: string | null;
   timezone?: string;
   role?: string;
   wake_time?: string | null;
@@ -441,6 +442,45 @@ export type AgentRecommendationLog = {
   created_at: string;
 };
 
+export type BurnoutScorePayload = {
+  score: number;
+  severity: "low" | "medium" | "high" | "critical" | string;
+  signals: Record<string, unknown>;
+  recommendation: string;
+};
+
+export type BurnoutInterventionPayload = {
+  status: string;
+  score: number;
+  signals: Record<string, unknown>;
+  summary?: string;
+  schedule_adjusted_blocks?: number;
+  schedule_kept_blocks?: number;
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  username: string;
+  full_name: string;
+  role: "owner" | "family" | "guest" | string;
+  is_active: boolean;
+  onboarding_completed: boolean;
+  created_at: string;
+};
+
+export type AdminStats = {
+  total_users: number;
+  active_users: number;
+  new_this_week: number;
+};
+
+export type CalendarSyncConflict = {
+  william_block?: string;
+  google_event?: string;
+  overlap_minutes?: number;
+};
+
 export type UserRule = {
   id: string;
   user_id: string;
@@ -610,6 +650,7 @@ export type ChatMessage = {
     data?: Record<string, unknown> | null;
   }> | null;
   metadata?: Record<string, unknown> | null;
+  extra_metadata?: Record<string, unknown> | null;
   created_at: string;
 };
 

@@ -22,6 +22,7 @@ import StudyPage from "./pages/StudyPage";
 import TradingPage from "./pages/TradingPage";
 import ChatPage from "./pages/ChatPage";
 import TimelinePage from "./pages/TimelinePage";
+import AdminPage from "./pages/AdminPage";
 
 function AnimatedRouteWrapper({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -126,6 +127,10 @@ export default function App() {
             <Route
               path="/settings"
               element={<ModuleBoundary moduleName="settings"><AnimatedRouteWrapper><SettingsPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/admin"
+              element={<ModuleBoundary moduleName="admin"><AnimatedRouteWrapper><AdminPage /></AnimatedRouteWrapper></ModuleBoundary>}
             />
           </Route>
         </Route>

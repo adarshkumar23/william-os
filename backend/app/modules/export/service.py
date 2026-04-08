@@ -11,7 +11,7 @@ import io
 import json
 import uuid
 import zipfile
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +32,7 @@ from app.modules.study.models import MockTest, RevisionCard, StudySession, Subje
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist
 from app.modules.voice.models import VoiceCommand
 from app.shared.types import EncryptionError, NotFoundError, ValidationError
+from fpdf import FPDF
 from sqlalchemy import delete, func, select
 from sqlalchemy.inspection import inspect as sa_inspect
 
@@ -232,6 +233,79 @@ class ExportService:
         await self._log_export(user_id, export_type="journal_decrypted")
         return self._to_zip_bytes(payload, filename="william_export_journal.json")
 
+    async def export_report_pdf(
+        self,
+        user_id: uuid.UUID,
+        days: int = 30,
+        title: str = "Performance Report",
+    ) -> bytes:
+        user = await self.db.get(User, user_id)
+        if user is None:
+            raise NotFoundError("User", str(user_id))
+
+        safe_days = max(1, min(days, 365))
+        summary = await self.get_data_summary(user_id)
+        since = datetime.now() - timedelta(days=safe_days)
+
+        recent_habit_checkins = await self._count_recent_habit_checkins(user_id=user_id, since=since)
+        total_study_sessions = await self._count(StudySession, StudySession.user_id == user_id)
+        total_workouts = await self._count(WorkoutLog, WorkoutLog.user_id == user_id)
+        total_trades = await self._count(TradeLog, TradeLog.user_id == user_id)
+
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=12)
+        pdf.add_page()
+
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, f"WILLIAM OS {title}", ln=True)
+
+        pdf.set_font("Helvetica", size=11)
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        pdf.cell(0, 8, f"Generated: {generated_at}", ln=True)
+        pdf.cell(0, 8, f"User: {user.email}", ln=True)
+        pdf.cell(0, 8, f"Window: last {safe_days} day(s)", ln=True)
+        pdf.ln(2)
+
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.cell(0, 8, "Highlights", ln=True)
+        pdf.set_font("Helvetica", size=11)
+        highlight_lines = [
+            f"Total records stored: {summary.get('total_records', 0)}",
+            f"Habit check-ins: {recent_habit_checkins}",
+            f"Study sessions (all): {total_study_sessions}",
+            f"Workout logs (all): {total_workouts}",
+            f"Trade logs (all): {total_trades}",
+        ]
+        for line in highlight_lines:
+            pdf.cell(0, 7, f"- {line}", ln=True)
+
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.cell(0, 8, "Dataset Summary", ln=True)
+        pdf.set_font("Helvetica", size=10)
+        for key, value in sorted(summary.items()):
+            if key == "total_records":
+                continue
+            label = key.replace("_", " ").title()
+            pdf.cell(0, 6, f"{label}: {value}", ln=True)
+
+        await self._log_export(user_id, export_type=f"report_pdf_{safe_days}d")
+        return bytes(pdf.output(dest="S"))
+
+    async def export_weekly_report_pdf(self, user_id: uuid.UUID) -> bytes:
+        return await self.export_report_pdf(
+            user_id=user_id,
+            days=7,
+            title="Weekly Report",
+        )
+
+    async def export_monthly_report_pdf(self, user_id: uuid.UUID) -> bytes:
+        return await self.export_report_pdf(
+            user_id=user_id,
+            days=30,
+            title="Monthly Report",
+        )
+
     async def delete_account(self, user_id: uuid.UUID) -> None:
         user = await self.db.get(User, user_id)
         if user is None:
@@ -401,6 +475,16 @@ class ExportService:
         )
         result = await self.db.execute(
             select(func.count()).select_from(child_model).where(child_fk_col.in_(parent_ids))
+        )
+        return int(result.scalar() or 0)
+
+    async def _count_recent_habit_checkins(self, user_id: uuid.UUID, since: datetime) -> int:
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(HabitCheckIn)
+            .join(Habit, HabitCheckIn.habit_id == Habit.id)
+            .where(Habit.user_id == user_id)
+            .where(HabitCheckIn.created_at >= since)
         )
         return int(result.scalar() or 0)
 

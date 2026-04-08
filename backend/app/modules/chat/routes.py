@@ -10,6 +10,7 @@ from typing import Any
 
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
+from app.modules.chat.proactive import ProactiveMessageService
 from app.modules.chat.schemas import (
     ChatMessageCreate,
     ChatMessageResponse,
@@ -20,9 +21,14 @@ from app.modules.chat.schemas import (
 from app.modules.chat.service import ChatService
 from app.shared.types import success
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+class ProactiveTriggerRequest(BaseModel):
+    trigger: str = Field(pattern=r"^(morning|afternoon|evening)$")
 
 
 @router.post("/sessions", status_code=201)
@@ -109,3 +115,25 @@ async def get_messages(
     messages = await service.get_messages(session_id, user_id, limit=limit)
     items = [ChatMessageResponse.model_validate(m).model_dump(mode="json", by_alias=True) for m in messages]
     return success(items)
+
+
+@router.post("/proactive/trigger")
+async def trigger_proactive_message(
+    request: ProactiveTriggerRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = ProactiveMessageService(db)
+    if request.trigger == "morning":
+        message = await service.generate_morning_message(user_id=user_id)
+    elif request.trigger == "afternoon":
+        message = await service.generate_afternoon_check(user_id=user_id)
+    else:
+        message = await service.generate_evening_summary(user_id=user_id)
+
+    await service.send_proactive_message(
+        user_id=user_id,
+        message=message,
+        trigger=request.trigger,
+    )
+    return success({"message": message, "sent": True})

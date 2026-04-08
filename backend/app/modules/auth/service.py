@@ -14,6 +14,7 @@ import httpx
 import pyotp
 import qrcode
 import structlog
+from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.permissions import default_scopes_for_role
 from app.core.security import (
@@ -26,9 +27,15 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.auth.models import LoginHistory, RefreshTokenBlacklist, User, UserDevice
+from app.modules.auth.models import UserRole
 from app.modules.auth.schemas import (
+    AdminStatsResponse,
+    AdminUserResponse,
+    AdminUserUpdateRequest,
+    FamilyInviteRequest,
     OnboardingCompleteRequest,
     OnboardingStatusResponse,
+    ProfileUpdateRequest,
     TokenResponse,
     UserLogin,
     UserProfile,
@@ -37,7 +44,7 @@ from app.modules.auth.schemas import (
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
 from app.shared.types import AuthenticationError, NotFoundError, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -302,6 +309,99 @@ class AuthService:
             raise NotFoundError("User", str(user_id))
         return UserProfile.model_validate(user)
 
+    async def update_profile(
+        self,
+        user_id: uuid.UUID,
+        data: ProfileUpdateRequest,
+    ) -> UserProfile:
+        user = await self._get_user_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User", str(user_id))
+
+        payload = data.model_dump(exclude_unset=True)
+        for field_name, value in payload.items():
+            setattr(user, field_name, value)
+
+        await self.db.flush()
+        await self.db.refresh(user)
+        return UserProfile.model_validate(user)
+
+    async def admin_list_users(self, owner_user_id: uuid.UUID) -> list[AdminUserResponse]:
+        await self._assert_owner(owner_user_id)
+        result = await self.db.execute(select(User).order_by(User.created_at.desc()))
+        rows = result.scalars().all()
+        return [AdminUserResponse.model_validate(row) for row in rows]
+
+    async def admin_update_user(
+        self,
+        owner_user_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+        data: AdminUserUpdateRequest,
+    ) -> AdminUserResponse:
+        await self._assert_owner(owner_user_id)
+        target = await self._get_user_by_id(target_user_id)
+        if target is None:
+            raise NotFoundError("User", str(target_user_id))
+
+        if data.role is not None:
+            target.role = UserRole(data.role)
+            target.permission_scopes = default_scopes_for_role(target.role.value)
+        if data.is_active is not None:
+            if target_user_id == owner_user_id and data.is_active is False:
+                raise ValidationError("Owner cannot deactivate their own account")
+            target.is_active = data.is_active
+
+        await self.db.flush()
+        await self.db.refresh(target)
+        return AdminUserResponse.model_validate(target)
+
+    async def admin_deactivate_user(
+        self,
+        owner_user_id: uuid.UUID,
+        target_user_id: uuid.UUID,
+    ) -> AdminUserResponse:
+        return await self.admin_update_user(
+            owner_user_id=owner_user_id,
+            target_user_id=target_user_id,
+            data=AdminUserUpdateRequest(is_active=False),
+        )
+
+    async def admin_stats(self, owner_user_id: uuid.UUID) -> AdminStatsResponse:
+        await self._assert_owner(owner_user_id)
+        week_cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=7)
+
+        total_result = await self.db.execute(select(func.count(User.id)))
+        active_result = await self.db.execute(
+            select(func.count(User.id)).where(User.is_active.is_(True))
+        )
+        new_result = await self.db.execute(
+            select(func.count(User.id)).where(User.created_at >= week_cutoff)
+        )
+        return AdminStatsResponse(
+            total_users=int(total_result.scalar() or 0),
+            active_users=int(active_result.scalar() or 0),
+            new_this_week=int(new_result.scalar() or 0),
+        )
+
+    async def invite_family(
+        self,
+        owner_user_id: uuid.UUID,
+        data: FamilyInviteRequest,
+    ) -> dict[str, str]:
+        await self._assert_owner(owner_user_id)
+        settings = get_settings()
+        token = uuid.uuid4().hex
+        invite_link = (
+            f"{settings.base_url.rstrip('/')}/register?invite={token}"
+            f"&email={data.email}&role={data.role}"
+        )
+        return {
+            "status": "created",
+            "invite_link": invite_link,
+            "email": str(data.email),
+            "role": data.role,
+        }
+
     async def get_onboarding_status(self, user_id: uuid.UUID) -> OnboardingStatusResponse:
         user = await self._get_user_by_id(user_id)
         if not user:
@@ -450,6 +550,16 @@ class AuthService:
     async def _get_user_by_id(self, user_id: uuid.UUID) -> User | None:
         result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
+
+    async def _assert_owner(self, user_id: uuid.UUID) -> User:
+        user = await self._get_user_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User", str(user_id))
+        if user.role != UserRole.OWNER:
+            from app.shared.types import AuthorizationError
+
+            raise AuthorizationError("Owner role required")
+        return user
 
     async def _register_device(
         self,

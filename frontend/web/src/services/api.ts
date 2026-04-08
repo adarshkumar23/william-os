@@ -2,12 +2,17 @@ import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from "ax
 
 import {
   AnyRecord,
+  AdminStats,
+  AdminUser,
   ApiEnvelope,
   ActivityFeedItem,
   AgentRecommendationLog,
   AgentStatus,
   AuthTokens,
   AskTimelineResponse,
+  BurnoutInterventionPayload,
+  BurnoutScorePayload,
+  CalendarSyncConflict,
   OnboardingCompleteResponse,
   OnboardingCompletePayload,
   OnboardingStatus,
@@ -22,10 +27,10 @@ import {
   Decision,
   DecisionAnalysis,
   EnergyForecast,
-    LoginHistoryItem,
-    SecretMetadata,
-    SessionDevice,
-    TotpSetupPayload,
+  LoginHistoryItem,
+  SecretMetadata,
+  SessionDevice,
+  TotpSetupPayload,
   Habit,
   HabitCheckIn,
   LifeScore,
@@ -238,6 +243,23 @@ export const api = {
     refresh: () => post<AuthTokens>("/auth/refresh", { refresh_token: getRefreshToken() }),
     logout: () => post<{ logged_out: boolean }>("/auth/logout"),
     me: () => get<UserProfile>("/auth/me"),
+    updateProfile: (payload: {
+      full_name?: string;
+      display_name?: string | null;
+      avatar_url?: string | null;
+      timezone?: string;
+      wake_time?: string | null;
+      sleep_time?: string | null;
+      sleep_goal?: number | null;
+      focus_areas?: string[] | null;
+    }) => patch<UserProfile>("/auth/profile", payload),
+    adminUsers: () => get<AdminUser[]>("/auth/admin/users"),
+    adminUpdateUser: (userId: string, payload: { role?: string; is_active?: boolean }) =>
+      patch<AdminUser>(`/auth/admin/users/${userId}`, payload),
+    adminDeactivateUser: (userId: string) => del<AdminUser>(`/auth/admin/users/${userId}`),
+    adminStats: () => get<AdminStats>("/auth/admin/stats"),
+    inviteFamily: (payload: { email: string; role: "family" | "guest" }) =>
+      post<Record<string, unknown>>("/auth/family/invite", payload),
     setup2fa: () => get<TotpSetupPayload>("/auth/2fa/setup"),
     verify2fa: (code: string) => post<{ enabled: boolean }>("/auth/2fa/verify", { code }),
     sessions: () => get<SessionDevice[]>("/auth/sessions"),
@@ -283,6 +305,18 @@ export const api = {
         "/calendar/upcoming",
         { params: { days } },
       );
+      return response.data;
+    },
+    syncGoogleToWilliam: async () => {
+      const response = await apiClient.post<{ synced: number; added: number; updated: number; removed: number }>("/calendar/sync/google-to-william", {});
+      return response.data;
+    },
+    syncWilliamToGoogle: async () => {
+      const response = await apiClient.post<{ pushed: number }>("/calendar/sync/william-to-google", {});
+      return response.data;
+    },
+    syncConflicts: async () => {
+      const response = await apiClient.get<{ conflicts: CalendarSyncConflict[]; count: number }>("/calendar/sync/conflicts");
       return response.data;
     },
   },
@@ -474,6 +508,9 @@ export const api = {
     askTimeline: (question: string) => post<AskTimelineResponse>("/intelligence/ask-timeline", { question }),
     warnings: () => get<PredictiveWarning[]>("/intelligence/warnings"),
     scanWarnings: () => post<PredictiveWarning[]>("/intelligence/warnings/scan"),
+    resolveWarning: (warningId: string) => patch<PredictiveWarning>(`/intelligence/warnings/${warningId}/resolve`),
+    burnoutScore: () => get<BurnoutScorePayload>("/intelligence/burnout/score"),
+    interveneBurnout: () => post<BurnoutInterventionPayload>("/intelligence/burnout/intervene"),
   },
 
   memory: {
@@ -498,6 +535,21 @@ export const api = {
       const response = await apiClient.get("/export/audit-log.csv", { responseType: "blob" });
       return response.data as Blob;
     },
+    weeklyReportPdf: async () => {
+      const response = await apiClient.get("/export/report/weekly.pdf", { responseType: "blob" });
+      return response.data as Blob;
+    },
+    monthlyReportPdf: async () => {
+      const response = await apiClient.get("/export/report/monthly.pdf", { responseType: "blob" });
+      return response.data as Blob;
+    },
+    customReportPdf: async (days = 30) => {
+      const response = await apiClient.get("/export/report/pdf", {
+        params: { days },
+        responseType: "blob",
+      });
+      return response.data as Blob;
+    },
     deleteAccount: (password: string) => del<{ deleted: boolean }>("/export/account", { password }),
   },
   chat: {
@@ -509,5 +561,7 @@ export const api = {
       post<{ user_message: ChatMessage; assistant_message: ChatMessage }>(`/chat/sessions/${sessionId}/messages`, payload),
     getMessages: (sessionId: string, params?: { limit?: number }) => 
       get<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`, params),
+    triggerProactive: (trigger: "morning" | "afternoon" | "evening") =>
+      post<{ message: string; sent: boolean }>("/chat/proactive/trigger", { trigger }),
   },
 };

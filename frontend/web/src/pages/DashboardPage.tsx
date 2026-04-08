@@ -2,6 +2,7 @@ import { addDays, format } from "date-fns";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   Activity,
+  AlertTriangle,
   CalendarDays,
   Clock3,
   Flame,
@@ -34,11 +35,14 @@ import { api } from "../services/api";
 import {
   CalendarTodayResponse,
   CalendarEvent,
+  CalendarSyncConflict,
   DailyPlan,
+  BurnoutScorePayload,
   EnergyForecast,
   Habit,
   LifeScore,
   LifeScoreHistoryPoint,
+  PredictiveWarning,
   TimelineEvent,
   WeeklyReview,
 } from "../types/api";
@@ -69,6 +73,10 @@ export default function DashboardPage() {
   const [energyForecast, setEnergyForecast] = useState<EnergyForecast | null>(null);
   const [weeklyReview, setWeeklyReview] = useState<WeeklyReview | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [warnings, setWarnings] = useState<PredictiveWarning[]>([]);
+  const [burnoutScore, setBurnoutScore] = useState<BurnoutScorePayload | null>(null);
+  const [calendarConflicts, setCalendarConflicts] = useState<CalendarSyncConflict[]>([]);
+  const [warningsExpanded, setWarningsExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -102,6 +110,13 @@ export default function DashboardPage() {
       const calendarToday =
         (await api.calendar.today().catch(() => ({ events: [] } as CalendarTodayResponse))) as
           CalendarTodayResponse;
+      const warningRows =
+        (await api.intelligence.warnings().catch(() => [] as PredictiveWarning[])) as PredictiveWarning[];
+      const burnout =
+        (await api.intelligence.burnoutScore().catch(() => null)) as BurnoutScorePayload | null;
+      const conflicts =
+        (await api.calendar.syncConflicts().catch(() => ({ conflicts: [] as CalendarSyncConflict[] }))) as
+          { conflicts: CalendarSyncConflict[] };
 
       setPlan(todayPlan);
       setHabits(habitRows);
@@ -111,6 +126,9 @@ export default function DashboardPage() {
       setEnergyForecast(energy);
       setWeeklyReview(review);
       setCalendarEvents(calendarToday.events ?? []);
+      setWarnings(warningRows);
+      setBurnoutScore(burnout);
+      setCalendarConflicts(conflicts.conflicts ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard.");
     } finally {
@@ -194,9 +212,91 @@ export default function DashboardPage() {
   const activeHabits = habits.filter((habit) => habit.is_active !== false).length;
   const maxStreak = habits.reduce((max, habit) => Math.max(max, Number(habit.current_streak || 0)), 0);
 
+  const visibleWarnings = warningsExpanded ? warnings : warnings.slice(0, 3);
+
+  const resolveWarning = async (warningId: string) => {
+    try {
+      await api.intelligence.resolveWarning(warningId);
+      setWarnings((prev) => prev.filter((warning) => warning.id !== warningId));
+    } catch {
+      setError("Failed to resolve warning.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {error ? <InsightBanner text={error} type="danger" /> : null}
+
+      {calendarConflicts.length > 0 ? (
+        <InsightBanner
+          text={`${calendarConflicts.length} calendar conflict(s) detected between William blocks and Google events.`}
+          type="warning"
+        />
+      ) : null}
+
+      <section className="grid gap-4 xl:grid-cols-3">
+        <AppCard className="xl:col-span-2">
+          <div className="flex items-center justify-between">
+            <p className="section-label inline-flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-warning" /> Predictive Warnings
+            </p>
+            <button
+              type="button"
+              onClick={() => setWarningsExpanded((prev) => !prev)}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary"
+            >
+              {warningsExpanded ? "Collapse" : "Expand"}
+            </button>
+          </div>
+          <div className="mt-3 space-y-2">
+            {visibleWarnings.length === 0 ? (
+              <p className="text-sm text-text-secondary">No active warnings right now.</p>
+            ) : (
+              visibleWarnings.map((warning) => (
+                <div key={warning.id} className="rounded-lg border border-border bg-surface-raised p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-text-primary">{warning.warning_type.replaceAll("_", " ")}</p>
+                      <p className="text-xs text-text-secondary">Severity: {warning.severity}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void resolveWarning(warning.id)}
+                      className="rounded-lg border border-border px-2 py-1 text-xs"
+                    >
+                      Resolve
+                    </button>
+                  </div>
+                  <p className="mt-2 text-sm text-text-primary">{warning.explanation}</p>
+                  <p className="mt-1 text-xs text-text-secondary">Action: {warning.recommended_action}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </AppCard>
+
+        <AppCard>
+          <p className="section-label">Burnout Risk</p>
+          <div className="mt-3 space-y-2">
+            <p className="text-3xl font-semibold text-text-primary">{Number(burnoutScore?.score ?? 0).toFixed(0)}</p>
+            <p className="text-sm capitalize text-text-secondary">{String(burnoutScore?.severity ?? "unknown")}</p>
+            <p className="text-xs text-text-secondary">{String(burnoutScore?.recommendation ?? "No recommendation yet")}</p>
+            <button
+              type="button"
+              onClick={() =>
+                void api.intelligence.interveneBurnout().then(() => {
+                  void api.intelligence.burnoutScore().then((payload) => {
+                    setBurnoutScore(payload);
+                  });
+                })
+              }
+              className="mt-2 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white"
+            >
+              Trigger Intervention
+            </button>
+          </div>
+        </AppCard>
+      </section>
 
       <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 xl:grid-cols-3">
         <motion.div variants={fadeMotion} className="xl:col-span-2">

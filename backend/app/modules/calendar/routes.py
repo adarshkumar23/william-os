@@ -6,6 +6,7 @@ from app.modules.auth.routes import get_current_user_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import apple_service, google_service
@@ -63,7 +64,7 @@ async def google_create_event(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    result = google_service.create_event(
+    result = await google_service.create_event(
         db,
         user_id,
         payload.title,
@@ -149,16 +150,14 @@ async def today_events(
     db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     today = datetime.utcnow().date()
-    events = (
-        db.query(CachedEvent)
-        .filter(
-            CachedEvent.user_id == user_id,
-            CachedEvent.start_time >= datetime.combine(today, datetime.min.time()),
-            CachedEvent.start_time < datetime.combine(today, datetime.max.time()),
-        )
-        .order_by(CachedEvent.start_time)
-        .all()
+    result = await db.execute(
+        select(CachedEvent)
+        .where(CachedEvent.user_id == str(user_id))
+        .where(CachedEvent.start_time >= datetime.combine(today, datetime.min.time()))
+        .where(CachedEvent.start_time < datetime.combine(today, datetime.max.time()))
+        .order_by(CachedEvent.start_time.asc())
     )
+    events = result.scalars().all()
     return {
         "events": [
             {
@@ -180,7 +179,31 @@ async def upcoming_events(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    g = google_service.fetch_events(db, user_id, days)
-    a = apple_service.fetch_events(db, user_id, days)
+    g = await google_service.fetch_events(db, user_id, days)
+    a = await apple_service.fetch_events(db, user_id, days)
     all_events = sorted(g + a, key=lambda x: x.get("start", ""))
     return {"events": all_events, "count": len(all_events)}
+
+
+@router.post("/sync/google-to-william")
+async def sync_google_to_william(
+    db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)
+):
+    payload = await google_service.sync_to_william_schedule(db, user_id)
+    return payload
+
+
+@router.post("/sync/william-to-google")
+async def sync_william_to_google(
+    db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)
+):
+    payload = await google_service.push_william_to_google(db, user_id)
+    return payload
+
+
+@router.get("/sync/conflicts")
+async def sync_conflicts(
+    db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)
+):
+    payload = await google_service.detect_conflicts(db, user_id)
+    return {"conflicts": payload, "count": len(payload)}

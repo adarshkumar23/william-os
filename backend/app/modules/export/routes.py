@@ -117,6 +117,55 @@ async def export_lifetime(
     )
 
 
+@router.get("/report/weekly.pdf")
+async def export_weekly_report_pdf(
+    user_id: UserIdDep,
+    db: DbSessionDep,
+):
+    service = ExportService(db)
+    payload = await service.export_weekly_report_pdf(user_id=user_id)
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    filename = f"william_weekly_report_{timestamp}.pdf"
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/report/monthly.pdf")
+async def export_monthly_report_pdf(
+    user_id: UserIdDep,
+    db: DbSessionDep,
+):
+    service = ExportService(db)
+    payload = await service.export_monthly_report_pdf(user_id=user_id)
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    filename = f"william_monthly_report_{timestamp}.pdf"
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/report/pdf")
+async def export_custom_report_pdf(
+    user_id: UserIdDep,
+    db: DbSessionDep,
+    days: int = 30,
+):
+    service = ExportService(db)
+    payload = await service.export_report_pdf(user_id=user_id, days=days, title="Custom Report")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    filename = f"william_report_{days}d_{timestamp}.pdf"
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.delete("/account")
 async def delete_account(
     request: DeleteRequestDep,

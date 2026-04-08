@@ -6,7 +6,7 @@ Background task processing for schedule generation, email sync, notifications.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from celery import Celery
@@ -114,6 +114,26 @@ celery_app.conf.beat_schedule = {
     "predictive-warning-scan": {
         "task": "app.worker.scan_predictive_warnings",
         "schedule": crontab(minute=0, hour="*/6"),
+        "options": {"queue": "analysis"},
+    },
+    "proactive-morning-task": {
+        "task": "app.worker.proactive_morning_task",
+        "schedule": crontab(minute="*/15"),
+        "options": {"queue": "notifications"},
+    },
+    "proactive-afternoon-task": {
+        "task": "app.worker.proactive_afternoon_task",
+        "schedule": crontab(minute="*/15"),
+        "options": {"queue": "notifications"},
+    },
+    "proactive-evening-task": {
+        "task": "app.worker.proactive_evening_task",
+        "schedule": crontab(minute="*/15"),
+        "options": {"queue": "notifications"},
+    },
+    "calendar-sync-task": {
+        "task": "app.worker.calendar_sync_task",
+        "schedule": crontab(minute="*/30"),
         "options": {"queue": "analysis"},
     },
     "cleanup-expired-tokens": {
@@ -893,6 +913,163 @@ def scan_predictive_warnings():
     _run_async(_run())
 
 
+@celery_app.task(name="app.worker.proactive_morning_task")
+def proactive_morning_task():
+    """Generate and send proactive morning messages around 07:00 local time."""
+
+    import structlog
+
+    logger = structlog.get_logger("worker.proactive_morning")
+    logger.info("proactive_morning_task_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.chat.proactive import ProactiveMessageService
+
+        now_utc = datetime.now(UTC)
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+            users = result.scalars().all()
+            service = ProactiveMessageService(db)
+
+            for user in users:
+                try:
+                    if not _is_local_time_window(now_utc, user.timezone, 7, 0, 15):
+                        continue
+                    if not await service.should_send_morning(user.id):
+                        continue
+                    message = await service.generate_morning_message(user.id)
+                    await service.send_proactive_message(user.id, message, "morning")
+                except Exception as exc:
+                    logger.warning("proactive_morning_failed", user_id=str(user.id), error=str(exc))
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.proactive_afternoon_task")
+def proactive_afternoon_task():
+    """Generate and send proactive afternoon checks around 15:00 local time."""
+
+    import structlog
+
+    logger = structlog.get_logger("worker.proactive_afternoon")
+    logger.info("proactive_afternoon_task_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.chat.proactive import ProactiveMessageService
+
+        now_utc = datetime.now(UTC)
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+            users = result.scalars().all()
+            service = ProactiveMessageService(db)
+
+            for user in users:
+                try:
+                    if not _is_local_time_window(now_utc, user.timezone, 15, 0, 15):
+                        continue
+                    if not await service.should_send_afternoon(user.id):
+                        continue
+                    message = await service.generate_afternoon_check(user.id)
+                    await service.send_proactive_message(user.id, message, "afternoon")
+                except Exception as exc:
+                    logger.warning(
+                        "proactive_afternoon_failed", user_id=str(user.id), error=str(exc)
+                    )
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.proactive_evening_task")
+def proactive_evening_task():
+    """Generate and send proactive evening summaries around 21:30 local time."""
+
+    import structlog
+
+    logger = structlog.get_logger("worker.proactive_evening")
+    logger.info("proactive_evening_task_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.chat.proactive import ProactiveMessageService
+
+        now_utc = datetime.now(UTC)
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+            users = result.scalars().all()
+            service = ProactiveMessageService(db)
+
+            for user in users:
+                try:
+                    if not _is_local_time_window(now_utc, user.timezone, 21, 30, 20):
+                        continue
+                    if not await service.should_send_evening(user.id):
+                        continue
+                    message = await service.generate_evening_summary(user.id)
+                    await service.send_proactive_message(user.id, message, "evening")
+                except Exception as exc:
+                    logger.warning("proactive_evening_failed", user_id=str(user.id), error=str(exc))
+
+            await db.commit()
+
+    _run_async(_run())
+
+
+@celery_app.task(name="app.worker.calendar_sync_task")
+def calendar_sync_task():
+    """Sync Google calendar events into William schedules every 30 minutes."""
+
+    import structlog
+
+    logger = structlog.get_logger("worker.calendar_sync")
+    logger.info("calendar_sync_task_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.calendar import google_service
+
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+            users = result.scalars().all()
+
+            for user in users:
+                try:
+                    if not await google_service.is_connected(db, user.id):
+                        continue
+                    sync_result = await google_service.sync_to_william_schedule(db, user.id)
+                    logger.info(
+                        "calendar_sync_user_completed",
+                        user_id=str(user.id),
+                        synced=sync_result.get("synced", 0),
+                        added=sync_result.get("added", 0),
+                        updated=sync_result.get("updated", 0),
+                        removed=sync_result.get("removed", 0),
+                    )
+                except Exception as exc:
+                    logger.warning("calendar_sync_user_failed", user_id=str(user.id), error=str(exc))
+
+            await db.commit()
+
+    _run_async(_run())
+
+
 def _is_wake_time_approaching(
     wake_time_str: str | None,
     now: datetime,
@@ -941,6 +1118,24 @@ def _is_briefing_due_now(
     target = wake_dt_local + timedelta(minutes=offset_minutes)
     delta_minutes = (local_now - target).total_seconds() / 60.0
     return 0 <= delta_minutes < dispatch_window_minutes
+
+
+def _is_local_time_window(
+    now_utc: datetime,
+    timezone_name: str | None,
+    hour: int,
+    minute: int,
+    window_minutes: int,
+) -> bool:
+    try:
+        tz = ZoneInfo(timezone_name or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    local_now = now_utc.astimezone(tz)
+    target = datetime.combine(local_now.date(), time(hour=hour, minute=minute), tzinfo=tz)
+    delta = abs((local_now - target).total_seconds() / 60.0)
+    return delta <= float(window_minutes)
 
 
 @celery_app.task(name="app.worker.cleanup_expired_tokens")

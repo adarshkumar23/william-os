@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { Bot, MessageSquarePlus, Mic, Send, Trash2, X } from "lucide-react";
+import { Bot, MessageSquarePlus, Mic, Send, Sparkles, Trash2 } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -43,6 +43,7 @@ export default function ChatPage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [williamMode, setWilliamMode] = useState(() => getWilliamModeByHour(new Date().getHours()));
   const [error, setError] = useState("");
+  const [proactiveSending, setProactiveSending] = useState<"morning" | "afternoon" | "evening" | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Voice Input State
@@ -75,7 +76,7 @@ export default function ChatPage() {
 
   const loadSessions = async () => {
     try {
-      const data = await api.chat.listSessions();
+      const data = (await api.chat.listSessions()) as ChatSessionListItem[];
       setSessions(data);
       if (data.length > 0 && !activeSessionId) {
         setActiveSessionId(data[0].id);
@@ -91,7 +92,7 @@ export default function ChatPage() {
   const loadMessages = async (id: string) => {
     setChatLoading(true);
     try {
-      const data = await api.chat.getMessages(id);
+      const data = (await api.chat.getMessages(id)) as ChatMessage[];
       setMessages(data.reverse());
     } catch {
       setError("Failed to load conversation");
@@ -102,7 +103,10 @@ export default function ChatPage() {
 
   const createSession = async (agent: AgentName = "os") => {
     try {
-      const newSession = await api.chat.createSession({ agent_name: agent, title: "New Conversation" });
+      const newSession = (await api.chat.createSession({
+        agent_name: agent,
+        title: "New Conversation",
+      })) as ChatSessionListItem;
       setSessions([newSession, ...sessions]);
       setActiveSessionId(newSession.id);
     } catch {
@@ -143,7 +147,10 @@ export default function ChatPage() {
     setChatLoading(true);
 
     try {
-      const { user_message, assistant_message } = await api.chat.sendMessage(activeSessionId, { content });
+      const response = (await api.chat.sendMessage(activeSessionId, {
+        content,
+      })) as { user_message: ChatMessage; assistant_message: ChatMessage };
+      const { user_message, assistant_message } = response;
       setMessages((prev) => prev.map((m) => (m.id === tempId ? user_message : m)).concat(assistant_message));
 
       // Refresh sessions to get any updated title preview
@@ -209,6 +216,21 @@ export default function ChatPage() {
       setIsRecording(true);
     } catch (err) {
       setError("Microphone access denied or error occurred");
+    }
+  };
+
+  const triggerProactive = async (trigger: "morning" | "afternoon" | "evening") => {
+    if (!activeSessionId) {
+      return;
+    }
+    setProactiveSending(trigger);
+    try {
+      await api.chat.triggerProactive(trigger);
+      await loadMessages(activeSessionId);
+    } catch {
+      setError("Failed to send proactive message.");
+    } finally {
+      setProactiveSending(null);
     }
   };
 
@@ -300,7 +322,8 @@ export default function ChatPage() {
         
         {/* Header */}
         <div className="flex h-16 shrink-0 items-center border-b border-border px-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between w-full gap-3">
+            <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-surface-raised border border-border">
               <Bot className="h-5 w-5 text-accent" />
             </div>
@@ -315,6 +338,21 @@ export default function ChatPage() {
                 {williamMode}
               </p>
             </div>
+            </div>
+            <div className="hidden items-center gap-2 md:flex">
+              {(["morning", "afternoon", "evening"] as const).map((trigger) => (
+                <button
+                  key={trigger}
+                  type="button"
+                  onClick={() => void triggerProactive(trigger)}
+                  disabled={proactiveSending === trigger}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-secondary hover:text-text-primary disabled:opacity-40"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {proactiveSending === trigger ? "Sending..." : trigger}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -328,6 +366,7 @@ export default function ChatPage() {
             <div className="space-y-6">
               {messages.map((msg, idx) => {
                 const isUser = msg.role === "user";
+                const proactive = Boolean((msg.extra_metadata && msg.extra_metadata.proactive) || (msg.metadata && msg.metadata.proactive));
                 return (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -340,9 +379,16 @@ export default function ChatPage() {
                         "relative max-w-[80%] rounded-2xl p-4 text-sm whitespace-pre-wrap",
                         isUser
                           ? "bg-accent text-white"
-                          : "bg-surface-raised border border-border text-text-primary",
+                          : proactive
+                            ? "bg-amber-400/10 border border-amber-400/30 text-text-primary"
+                            : "bg-surface-raised border border-border text-text-primary",
                       )}
                     >
+                      {proactive && !isUser ? (
+                        <p className="mb-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                          <Sparkles className="h-3 w-3" /> Proactive check-in
+                        </p>
+                      ) : null}
                       {msg.content}
                       
                       {msg.actions_taken && msg.actions_taken.length > 0 && (
@@ -388,7 +434,7 @@ export default function ChatPage() {
             <button
               type="button"
               className={clsx("rounded-lg p-2 transition", isRecording ? "bg-danger/20 text-danger" : "text-text-muted hover:text-text-primary")}
-              onClick={() => setIsRecording(!isRecording)}
+              onClick={() => void toggleRecording()}
               title="Voice Input (Coming soon)"
             >
               <Mic className="h-5 w-5" />

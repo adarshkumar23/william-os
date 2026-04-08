@@ -42,6 +42,7 @@ class User(Base):
     # Profile & Preferences
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata")
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     wake_time: Mapped[str | None] = mapped_column(
         String(5),
         default="06:00",

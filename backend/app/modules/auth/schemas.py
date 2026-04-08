@@ -53,6 +53,7 @@ class UserProfile(BaseModel):
     username: str
     full_name: str
     display_name: str | None
+    avatar_url: str | None = None
     role: str
     timezone: str
     wake_time: str | None
@@ -73,6 +74,46 @@ class UserPreferencesUpdate(BaseModel):
     wake_time: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
     sleep_time: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
     preferences: dict | None = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=100)
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    avatar_url: str | None = Field(default=None, max_length=500)
+    timezone: str | None = None
+    wake_time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    sleep_time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    sleep_goal: float | None = Field(default=None, ge=4, le=12)
+    focus_areas: list[str] | None = None
+
+
+class AdminUserResponse(BaseModel):
+    id: UUID
+    email: str
+    username: str
+    full_name: str
+    role: str
+    is_active: bool
+    onboarding_completed: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminUserUpdateRequest(BaseModel):
+    role: str | None = Field(default=None, pattern=r"^(owner|family|guest)$")
+    is_active: bool | None = None
+
+
+class AdminStatsResponse(BaseModel):
+    total_users: int
+    active_users: int
+    new_this_week: int
+
+
+class FamilyInviteRequest(BaseModel):
+    email: EmailStr
+    role: str = Field(pattern=r"^(family|guest)$")
 
 
 class OnboardingStatusResponse(BaseModel):

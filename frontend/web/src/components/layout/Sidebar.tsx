@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import {
+  Crown,
   BookOpen,
   Brain,
   CalendarRange,
@@ -62,6 +63,17 @@ const groups: Array<{ label: string; items: NavRow[] }> = [
 export default function Sidebar() {
   const { user } = useAuth();
   const name = String(user?.full_name || user?.username || "User");
+  const isOwner = String(user?.role || "") === "owner";
+
+  const renderedGroups = groups.map((group) => {
+    if (group.label !== "System" || !isOwner) {
+      return group;
+    }
+    return {
+      ...group,
+      items: [...group.items, { to: "/admin", label: "Admin", icon: Crown }],
+    };
+  });
 
   return (
     <aside className="hidden w-60 shrink-0 border-r border-border bg-background px-3 py-4 lg:flex lg:flex-col">
@@ -73,7 +85,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="space-y-4">
-        {groups.map((group) => (
+        {renderedGroups.map((group) => (
           <div key={group.label}>
             <p className="section-label px-2">{group.label}</p>
             <div className="mt-2 space-y-1">

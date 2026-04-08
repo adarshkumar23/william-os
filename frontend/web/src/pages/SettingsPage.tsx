@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../services/api";
+import { CalendarSyncConflict } from "../types/api";
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -15,14 +16,18 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 export default function SettingsPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [profileDraft, setProfileDraft] = useState({
     full_name: "",
-    username: "",
+    display_name: "",
+    avatar_url: "",
     timezone: "",
     wake_time: "06:30",
     sleep_time: "22:30",
+    sleep_goal: "8",
   });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
   const [telegramStatus, setTelegramStatus] = useState<Record<string, unknown> | null>(null);
   const [linkedCode, setLinkedCode] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -30,6 +35,9 @@ export default function SettingsPage() {
   const [sessions, setSessions] = useState<Array<Record<string, unknown>>>([]);
   const [loginHistory, setLoginHistory] = useState<Array<Record<string, unknown>>>([]);
   const [secrets, setSecrets] = useState<Array<Record<string, unknown>>>([]);
+  const [calendarConflicts, setCalendarConflicts] = useState<CalendarSyncConflict[]>([]);
+  const [calendarMessage, setCalendarMessage] = useState("");
+  const [reportDays, setReportDays] = useState("30");
   const [secretProvider, setSecretProvider] = useState("openrouter");
   const [secretValue, setSecretValue] = useState("");
 
@@ -39,10 +47,12 @@ export default function SettingsPage() {
     }
     setProfileDraft({
       full_name: String(user.full_name ?? ""),
-      username: String(user.username ?? ""),
+      display_name: String(user.display_name ?? ""),
+      avatar_url: String(user.avatar_url ?? ""),
       timezone: String(user.timezone ?? "UTC"),
       wake_time: String(user.wake_time ?? "06:30"),
       sleep_time: String(user.sleep_time ?? "22:30"),
+      sleep_goal: String(user.sleep_goal ?? 8),
     });
   }, [user]);
 
@@ -71,6 +81,57 @@ export default function SettingsPage() {
     void refreshSecurityData();
   }, []);
 
+  useEffect(() => {
+    void api.calendar
+      .syncConflicts()
+      .then((payload) => setCalendarConflicts(payload.conflicts ?? []))
+      .catch(() => setCalendarConflicts([]));
+  }, []);
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    setProfileMessage("");
+    try {
+      await api.auth.updateProfile({
+        full_name: profileDraft.full_name,
+        display_name: profileDraft.display_name || null,
+        avatar_url: profileDraft.avatar_url || null,
+        timezone: profileDraft.timezone,
+        wake_time: profileDraft.wake_time,
+        sleep_time: profileDraft.sleep_time,
+        sleep_goal: Number(profileDraft.sleep_goal || 8),
+      });
+      await refreshUser();
+      setProfileMessage("Profile saved.");
+    } catch {
+      setProfileMessage("Failed to save profile.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const runGoogleToWilliamSync = async () => {
+    try {
+      const payload = await api.calendar.syncGoogleToWilliam();
+      setCalendarMessage(`Google to William sync complete (${String(payload.synced ?? 0)} synced).`);
+      const conflicts = await api.calendar.syncConflicts();
+      setCalendarConflicts(conflicts.conflicts ?? []);
+    } catch {
+      setCalendarMessage("Google to William sync failed.");
+    }
+  };
+
+  const runWilliamToGoogleSync = async () => {
+    try {
+      const payload = await api.calendar.syncWilliamToGoogle();
+      setCalendarMessage(`William to Google sync complete (${String(payload.pushed ?? 0)} pushed).`);
+      const conflicts = await api.calendar.syncConflicts();
+      setCalendarConflicts(conflicts.conflicts ?? []);
+    } catch {
+      setCalendarMessage("William to Google sync failed.");
+    }
+  };
+
   const connected = useMemo(() => Boolean(telegramStatus && telegramStatus.connected), [telegramStatus]);
 
   return (
@@ -96,10 +157,18 @@ export default function SettingsPage() {
               />
             </label>
             <label className="space-y-1">
-              <span className="text-sm">Username</span>
+              <span className="text-sm">Display name</span>
               <input
-                value={profileDraft.username}
-                onChange={(event) => setProfileDraft((prev) => ({ ...prev, username: event.target.value }))}
+                value={profileDraft.display_name}
+                onChange={(event) => setProfileDraft((prev) => ({ ...prev, display_name: event.target.value }))}
+                className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm">Avatar URL</span>
+              <input
+                value={profileDraft.avatar_url}
+                onChange={(event) => setProfileDraft((prev) => ({ ...prev, avatar_url: event.target.value }))}
                 className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2"
               />
             </label>
@@ -126,8 +195,26 @@ export default function SettingsPage() {
                 />
               </div>
             </label>
+            <label className="space-y-1">
+              <span className="text-sm">Sleep goal (hours)</span>
+              <input
+                value={profileDraft.sleep_goal}
+                onChange={(event) => setProfileDraft((prev) => ({ ...prev, sleep_goal: event.target.value }))}
+                className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2"
+              />
+            </label>
           </div>
-          <p className="mt-3 text-xs text-[rgb(var(--text-dim))]">Profile updates are local until backend profile patch endpoint is added.</p>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void saveProfile()}
+              disabled={savingProfile}
+              className="rounded-xl bg-[rgb(var(--primary))] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              {savingProfile ? "Saving..." : "Save profile"}
+            </button>
+            {profileMessage ? <p className="text-xs text-[rgb(var(--text-dim))]">{profileMessage}</p> : null}
+          </div>
         </article>
 
         <article className="card p-4">
@@ -217,6 +304,77 @@ export default function SettingsPage() {
             >
               Lifetime export
             </button>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm"
+              onClick={() => void api.export.weeklyReportPdf().then((blob) => triggerDownload(blob, "weekly-report.pdf"))}
+            >
+              Weekly PDF
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm"
+              onClick={() => void api.export.monthlyReportPdf().then((blob) => triggerDownload(blob, "monthly-report.pdf"))}
+            >
+              Monthly PDF
+            </button>
+            <div className="flex items-center gap-2">
+              <input
+                value={reportDays}
+                onChange={(event) => setReportDays(event.target.value)}
+                className="w-16 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-2 py-2 text-sm"
+              />
+              <button
+                type="button"
+                className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm"
+                onClick={() =>
+                  void api.export
+                    .customReportPdf(Number(reportDays || 30))
+                    .then((blob) => triggerDownload(blob, `custom-report-${reportDays}d.pdf`))
+                }
+              >
+                Custom PDF
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <article className="card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Clock3 className="h-4 w-4 text-[rgb(var(--primary))]" />
+            <h2 className="text-lg font-semibold">Calendar sync</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void runGoogleToWilliamSync()}
+              className="rounded-xl border border-[rgb(var(--border))] px-3 py-2 text-sm"
+            >
+              Sync Google -> William
+            </button>
+            <button
+              type="button"
+              onClick={() => void runWilliamToGoogleSync()}
+              className="rounded-xl border border-[rgb(var(--border))] px-3 py-2 text-sm"
+            >
+              Sync William -> Google
+            </button>
+          </div>
+          {calendarMessage ? <p className="mt-2 text-xs text-[rgb(var(--text-dim))]">{calendarMessage}</p> : null}
+          <div className="mt-3 space-y-2 text-sm">
+            {calendarConflicts.length === 0 ? (
+              <p className="text-[rgb(var(--text-dim))]">No sync conflicts detected.</p>
+            ) : (
+              calendarConflicts.slice(0, 6).map((conflict, index) => (
+                <div key={`${String(conflict.william_block || index)}`} className="rounded-xl border border-[rgb(var(--border))] p-2">
+                  <p className="font-medium">{String(conflict.william_block || "William block")}</p>
+                  <p className="text-xs text-[rgb(var(--text-dim))]">Conflicts with: {String(conflict.google_event || "Google event")}</p>
+                  <p className="text-xs text-[rgb(var(--text-dim))]">Overlap: {String(conflict.overlap_minutes || 0)} min</p>
+                </div>
+              ))
+            )}
           </div>
         </article>
 

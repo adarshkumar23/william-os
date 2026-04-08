@@ -6,14 +6,19 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 
 import structlog
+from app.modules.auth.models import User
 from app.modules.decisions.models import Decision
+from app.modules.habits.models import Habit, HabitCheckIn
 from app.modules.intelligence.models import ModuleSignal, PredictiveWarning
+from app.modules.intelligence.models import LifeScore
 from app.modules.intelligence.schemas import PredictiveWarningResponse
 from app.modules.journal.models import JournalEntry, JournalMood
 from app.modules.medicine.models import Medicine, MedicineLog
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
+from app.modules.scheduler.models import BlockCategory, BlockStatus, DailyPlan, ScheduleBlock
 from app.modules.scheduler.schemas import RescheduleRequest
+from app.modules.scheduler.schemas import ScheduleGenerateRequest
 from app.modules.scheduler.service import SchedulerService
 from app.modules.sleep.models import SleepDebt, SleepRecord
 from app.modules.study.models import MockTest, StudySession, Subject
@@ -36,6 +41,151 @@ class PredictiveWarningService:
         self.db = db
         self.messaging = MessagingService(db)
         self.scheduler = SchedulerService(db)
+
+    async def resolve_warning(
+        self,
+        user_id: uuid.UUID,
+        warning_id: uuid.UUID,
+    ) -> PredictiveWarningResponse:
+        result = await self.db.execute(
+            select(PredictiveWarning)
+            .where(PredictiveWarning.id == warning_id)
+            .where(PredictiveWarning.user_id == user_id)
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            from app.shared.types import NotFoundError
+
+            raise NotFoundError("PredictiveWarning", str(warning_id))
+
+        row.is_active = False
+        row.resolved_at = datetime.now(UTC).replace(tzinfo=None)
+        await self.db.flush()
+        await self.db.refresh(row)
+        return PredictiveWarningResponse.model_validate(row)
+
+    async def get_burnout_score(self, user_id: uuid.UUID) -> dict[str, object]:
+        score, signals = await self._calculate_burnout_score(user_id)
+        severity = self._burnout_severity(score)
+        if score < 30:
+            recommendation = "Maintain current pace and keep sleep consistency high."
+        elif score < 60:
+            recommendation = "Reduce load by 20% and protect recovery windows."
+        elif score < 80:
+            recommendation = "Scale tomorrow down to essentials and prioritize sleep recovery."
+        else:
+            recommendation = "Immediate recovery mode: cut workload, rest, and replan tomorrow."
+
+        return {
+            "score": round(score, 2),
+            "severity": severity,
+            "signals": signals,
+            "recommendation": recommendation,
+        }
+
+    async def intervene_burnout(self, user_id: uuid.UUID) -> dict[str, object]:
+        from app.modules.chat.proactive import ProactiveMessageService
+
+        score, signals = await self._calculate_burnout_score(user_id)
+        if score < 60:
+            return {
+                "status": "no_intervention_needed",
+                "score": round(score, 2),
+                "signals": signals,
+            }
+
+        tomorrow = date.today() + timedelta(days=1)
+        plan_result = await self.db.execute(
+            select(DailyPlan)
+            .where(DailyPlan.user_id == user_id)
+            .where(DailyPlan.plan_date == tomorrow)
+            .order_by(DailyPlan.created_at.desc())
+            .limit(1)
+        )
+        plan = plan_result.scalar_one_or_none()
+
+        if plan is None:
+            try:
+                await self.scheduler.generate_daily_plan(
+                    user_id=user_id,
+                    request=ScheduleGenerateRequest(target_date=tomorrow),
+                )
+            except Exception:
+                pass
+            plan_result = await self.db.execute(
+                select(DailyPlan)
+                .where(DailyPlan.user_id == user_id)
+                .where(DailyPlan.plan_date == tomorrow)
+                .order_by(DailyPlan.created_at.desc())
+                .limit(1)
+            )
+            plan = plan_result.scalar_one_or_none()
+
+        adjusted = 0
+        kept = 0
+        if plan is not None:
+            blocks_result = await self.db.execute(
+                select(ScheduleBlock)
+                .where(ScheduleBlock.plan_id == plan.id)
+                .order_by(ScheduleBlock.priority.asc(), ScheduleBlock.start_time.asc())
+            )
+            blocks = list(blocks_result.scalars().all())
+
+            keep_ids: set[uuid.UUID] = set()
+            for block in blocks:
+                if block.is_fixed:
+                    keep_ids.add(block.id)
+
+            flexible = [b for b in blocks if not b.is_fixed]
+            top_three = flexible[:3]
+            for block in top_three:
+                keep_ids.add(block.id)
+
+            kept = len(keep_ids)
+            for block in blocks:
+                if block.id in keep_ids:
+                    continue
+                block.status = BlockStatus.RESCHEDULED
+                adjusted += 1
+
+            if adjusted > 0:
+                journal_prompt_block = ScheduleBlock(
+                    plan_id=plan.id,
+                    title="Recovery Journal Prompt",
+                    description=(
+                        "How are you really feeling? William noticed signs of burnout."
+                    ),
+                    category=BlockCategory.PERSONAL,
+                    start_time=__import__("datetime").time(hour=20, minute=30),
+                    end_time=__import__("datetime").time(hour=20, minute=45),
+                    duration_minutes=15,
+                    status=BlockStatus.PENDING,
+                    priority=1,
+                    is_fixed=False,
+                    is_ai_generated=False,
+                    tags=["burnout", "journal", "recovery"],
+                    linked_module="journal",
+                )
+                self.db.add(journal_prompt_block)
+
+        proactive = ProactiveMessageService(self.db)
+        message = "I've lightened tomorrow's schedule. You need rest."
+        await proactive.send_proactive_message(
+            user_id=user_id,
+            message=message,
+            trigger="burnout_intervention",
+        )
+
+        await self.db.flush()
+        return {
+            "status": "intervened",
+            "score": round(score, 2),
+            "signals": signals,
+            "summary": "I have adjusted your next-day load and added a recovery journal prompt.",
+            "schedule_adjusted_blocks": adjusted,
+            "schedule_kept_blocks": kept,
+        }
 
     async def get_active_warnings(self, user_id: uuid.UUID) -> list[PredictiveWarningResponse]:
         result = await self.db.execute(
@@ -177,45 +327,179 @@ class PredictiveWarningService:
         return {"actions": actions}
 
     async def _detect_burnout_risk(self, user_id: uuid.UUID) -> dict | None:
-        cutoff_dt = datetime.now(UTC) - timedelta(days=3)
-        signals_result = await self.db.execute(
-            select(ModuleSignal)
-            .where(ModuleSignal.user_id == user_id)
-            .where(ModuleSignal.recorded_at >= cutoff_dt)
-            .order_by(ModuleSignal.recorded_at.desc())
-        )
-        rows = list(signals_result.scalars().all())
-        if not rows:
+        score, signals = await self._calculate_burnout_score(user_id)
+        if score < 30:
             return None
 
-        sleep_energy = [float(r.value) for r in rows if r.source_module == "sleep" and r.signal_type == "energy"]
-        habits_focus = [float(r.value) for r in rows if r.source_module == "habits" and r.signal_type == "focus"]
-        fitness_energy = [float(r.value) for r in rows if r.source_module == "fitness" and r.signal_type == "energy"]
+        severity = self._burnout_severity(score)
+        return {
+            "warning_type": "burnout_risk",
+            "severity": severity,
+            "explanation": (
+                f"Burnout risk score: {score:.0f}/100. "
+                f"{self._burnout_explanation(signals)}"
+            ),
+            "recommended_action": (
+                "Schedule a recovery day. Reduce tomorrow's workload by 50%."
+            ),
+            "details": {"score": round(score, 2), "signals": signals},
+        }
 
-        plan_rows = await self.db.execute(
-            select(func.count(StudySession.id), StudySession.session_date)
+    async def _calculate_burnout_score(
+        self,
+        user_id: uuid.UUID,
+    ) -> tuple[float, dict[str, object]]:
+        score = 0.0
+        signals: dict[str, object] = {}
+
+        # Signal 1: Sleep debt (0-25)
+        sleep_rows_result = await self.db.execute(
+            select(SleepRecord.sleep_duration_minutes)
+            .where(SleepRecord.user_id == user_id)
+            .where(SleepRecord.sleep_date >= date.today() - timedelta(days=7))
+            .order_by(SleepRecord.sleep_date.asc())
+        )
+        sleep_minutes = [float(value or 0.0) for value in sleep_rows_result.scalars().all()]
+        user = await self.db.get(User, user_id)
+        sleep_goal_hours = float(user.sleep_goal) if user and user.sleep_goal else 7.5
+        sleep_debt_hours = 0.0
+        for minutes in sleep_minutes:
+            duration_hours = minutes / 60.0
+            sleep_debt_hours += max(0.0, sleep_goal_hours - duration_hours)
+
+        sleep_points = 0.0
+        if sleep_debt_hours > 5.0:
+            sleep_points = 25.0
+        elif sleep_debt_hours >= 3.0:
+            sleep_points = 15.0
+        elif sleep_debt_hours >= 1.0:
+            sleep_points = 5.0
+        score += sleep_points
+        signals["sleep_debt_hours"] = round(sleep_debt_hours, 2)
+        signals["sleep_points"] = sleep_points
+
+        # Signal 2: Habit completion decline (0-20)
+        habits_count_result = await self.db.execute(
+            select(func.count(Habit.id))
+            .where(Habit.user_id == user_id)
+            .where(Habit.is_active.is_(True))
+        )
+        active_habits = int(habits_count_result.scalar() or 0)
+        current_start = date.today() - timedelta(days=6)
+        previous_start = date.today() - timedelta(days=13)
+        previous_end = date.today() - timedelta(days=7)
+
+        current_checkins_result = await self.db.execute(
+            select(func.count(HabitCheckIn.id))
+            .join(Habit, Habit.id == HabitCheckIn.habit_id)
+            .where(Habit.user_id == user_id)
+            .where(HabitCheckIn.check_date >= current_start)
+            .where(HabitCheckIn.check_date <= date.today())
+            .where(HabitCheckIn.completed.is_(True))
+            .where(HabitCheckIn.skipped.is_(False))
+        )
+        previous_checkins_result = await self.db.execute(
+            select(func.count(HabitCheckIn.id))
+            .join(Habit, Habit.id == HabitCheckIn.habit_id)
+            .where(Habit.user_id == user_id)
+            .where(HabitCheckIn.check_date >= previous_start)
+            .where(HabitCheckIn.check_date <= previous_end)
+            .where(HabitCheckIn.completed.is_(True))
+            .where(HabitCheckIn.skipped.is_(False))
+        )
+
+        denom = max(1, active_habits * 7)
+        current_rate = (int(current_checkins_result.scalar() or 0) / denom) * 100.0
+        previous_rate = (int(previous_checkins_result.scalar() or 0) / denom) * 100.0
+        decline = max(0.0, previous_rate - current_rate)
+        habit_points = 0.0
+        if decline > 30.0:
+            habit_points = 20.0
+        elif decline >= 15.0:
+            habit_points = 10.0
+        score += habit_points
+        signals["habit_decline_pct"] = round(decline, 2)
+        signals["habit_points"] = habit_points
+
+        # Signal 3: Mood trend (0-20)
+        mood_rows_result = await self.db.execute(
+            select(JournalEntry.mood)
+            .where(JournalEntry.user_id == user_id)
+            .where(JournalEntry.mood.is_not(None))
+            .order_by(JournalEntry.entry_date.desc(), JournalEntry.created_at.desc())
+            .limit(5)
+        )
+        mood_rows = [item for item in mood_rows_result.scalars().all() if item is not None]
+        low_count = sum(1 for mood in mood_rows if mood in {JournalMood.LOW, JournalMood.BAD})
+        mood_points = 0.0
+        if len(mood_rows) >= 5 and low_count == len(mood_rows):
+            mood_points = 20.0
+        elif low_count >= 3:
+            mood_points = 10.0
+        score += mood_points
+        signals["low_mood_count_last5"] = low_count
+        signals["mood_points"] = mood_points
+
+        # Signal 4: Life score decline (0-20)
+        life_rows_result = await self.db.execute(
+            select(LifeScore.computed_at, LifeScore.score)
+            .where(LifeScore.user_id == user_id)
+            .where(LifeScore.computed_at >= datetime.now(UTC) - timedelta(days=14))
+            .order_by(LifeScore.computed_at.asc())
+        )
+        current_scores: list[float] = []
+        previous_scores: list[float] = []
+        for computed_at, life_value in life_rows_result.all():
+            if computed_at.date() >= current_start:
+                current_scores.append(float(life_value))
+            elif previous_start <= computed_at.date() <= previous_end:
+                previous_scores.append(float(life_value))
+        current_avg = sum(current_scores) / len(current_scores) if current_scores else 0.0
+        previous_avg = sum(previous_scores) / len(previous_scores) if previous_scores else 0.0
+        score_drop = max(0.0, previous_avg - current_avg)
+        life_points = 0.0
+        if score_drop > 15.0:
+            life_points = 20.0
+        elif score_drop >= 5.0:
+            life_points = 10.0
+        score += life_points
+        signals["life_score_drop"] = round(score_drop, 2)
+        signals["life_score_points"] = life_points
+
+        # Signal 5: Overwork signals (0-15)
+        study_rows_result = await self.db.execute(
+            select(StudySession.session_date, func.sum(StudySession.duration_minutes))
             .where(StudySession.user_id == user_id)
-            .where(StudySession.session_date >= date.today() - timedelta(days=2))
+            .where(StudySession.session_date >= current_start)
             .group_by(StudySession.session_date)
         )
-        avg_workload = 0.0
-        grouped = plan_rows.all()
-        if grouped:
-            avg_workload = sum(float(count) for count, _ in grouped) / len(grouped)
+        heavy_study_days = sum(
+            1 for _, total_minutes in study_rows_result.all() if float(total_minutes or 0) > 300.0
+        )
 
-        low_sleep = sleep_energy and (sum(sleep_energy) / len(sleep_energy)) < 55
-        declining_habits = habits_focus and (sum(habits_focus[-2:]) / max(1, len(habits_focus[-2:]))) < 50
-        low_energy = fitness_energy and (sum(fitness_energy) / len(fitness_energy)) < 50
+        schedule_rows_result = await self.db.execute(
+            select(DailyPlan.plan_date, func.sum(ScheduleBlock.duration_minutes))
+            .join(ScheduleBlock, ScheduleBlock.plan_id == DailyPlan.id)
+            .where(DailyPlan.user_id == user_id)
+            .where(DailyPlan.plan_date >= current_start)
+            .group_by(DailyPlan.plan_date)
+        )
+        long_schedule_days = sum(
+            1
+            for _, total_minutes in schedule_rows_result.all()
+            if float(total_minutes or 0) > 720.0
+        )
+        overwork_points = 0.0
+        if heavy_study_days >= 3:
+            overwork_points += 10.0
+        if long_schedule_days >= 1:
+            overwork_points += 5.0
+        score += overwork_points
+        signals["heavy_study_days"] = heavy_study_days
+        signals["long_schedule_days"] = long_schedule_days
+        signals["overwork_points"] = overwork_points
 
-        if low_sleep and declining_habits and low_energy and avg_workload >= 1.5:
-            return {
-                "signals_window_days": 3,
-                "sleep_energy_avg": round(sum(sleep_energy) / len(sleep_energy), 2) if sleep_energy else 0,
-                "habits_focus_avg": round(sum(habits_focus) / len(habits_focus), 2) if habits_focus else 0,
-                "fitness_energy_avg": round(sum(fitness_energy) / len(fitness_energy), 2) if fitness_energy else 0,
-                "study_sessions_per_day_avg": round(avg_workload, 2),
-            }
-        return None
+        return min(100.0, score), signals
 
     async def _detect_sleep_collapse_risk(self, user_id: uuid.UUID) -> dict | None:
         debt_result = await self.db.execute(
@@ -346,6 +630,17 @@ class PredictiveWarningService:
     @staticmethod
     def _compose_warning_payload(warning_type: str, details: dict) -> tuple[str, str, str]:
         if warning_type == "burnout_risk":
+            if "severity" in details:
+                return (
+                    str(details.get("explanation", "Burnout risk detected.")),
+                    str(details.get("severity", "high")),
+                    str(
+                        details.get(
+                            "recommended_action",
+                            "Schedule a recovery day and reduce workload.",
+                        )
+                    ),
+                )
             return (
                 "Multi-signal burnout pattern detected for the last 3+ days (low sleep, low energy, and habit decline).",
                 "high",
@@ -393,3 +688,39 @@ class PredictiveWarningService:
             "medium",
             "review and rebalance workload",
         )
+
+    @staticmethod
+    def _burnout_severity(score: float) -> str:
+        if score >= 75:
+            return "critical"
+        if score >= 50:
+            return "high"
+        if score >= 30:
+            return "low"
+        return "low"
+
+    @staticmethod
+    def _burnout_explanation(signals: dict[str, object]) -> str:
+        segments: list[str] = []
+        if float(signals.get("sleep_points", 0.0)) > 0:
+            segments.append(
+                f"Sleep debt is {float(signals.get('sleep_debt_hours', 0.0)):.1f}h"
+            )
+        if float(signals.get("habit_points", 0.0)) > 0:
+            segments.append(
+                f"habit completion dropped {float(signals.get('habit_decline_pct', 0.0)):.0f}%"
+            )
+        if float(signals.get("mood_points", 0.0)) > 0:
+            segments.append(
+                f"{int(signals.get('low_mood_count_last5', 0))}/5 recent moods were low"
+            )
+        if float(signals.get("life_score_points", 0.0)) > 0:
+            segments.append(
+                f"life score declined {float(signals.get('life_score_drop', 0.0)):.1f} points"
+            )
+        if float(signals.get("overwork_points", 0.0)) > 0:
+            segments.append("overwork signals were detected")
+
+        if not segments:
+            return "Multiple burnout indicators were observed."
+        return "; ".join(segments) + "."
