@@ -14,6 +14,7 @@ import httpx
 import pyotp
 import qrcode
 import structlog
+from app.core.email import send_invite_email
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.permissions import default_scopes_for_role
