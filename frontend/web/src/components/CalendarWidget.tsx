@@ -3,7 +3,7 @@ import { CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { api } from "../services/api";
-import { CalendarEvent } from "../types/api";
+import { CalendarEvent, CalendarTodayResponse } from "../types/api";
 import { AppCard, Badge } from "./ui";
 
 export default function CalendarWidget() {
@@ -16,7 +16,7 @@ export default function CalendarWidget() {
       try {
         const rows = await api.calendar.today();
         if (active) {
-          setEvents(rows ?? []);
+          setEvents((rows as CalendarTodayResponse)?.events ?? []);
         }
       } catch {
         if (active) {
@@ -60,7 +60,7 @@ export default function CalendarWidget() {
                 />
               </div>
               <p className="meta-copy mt-1">
-                {format(new Date(event.start_time), "p")} - {format(new Date(event.end_time), "p")}
+                {format(new Date(event.start), "p")} - {format(new Date(event.end), "p")}
                 {event.location ? ` • ${event.location}` : ""}
               </p>
             </div>

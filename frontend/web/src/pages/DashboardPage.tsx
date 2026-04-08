@@ -7,7 +7,6 @@ import {
   Clock3,
   Flame,
   HeartPulse,
-  LineChart,
   Moon,
   Sparkles,
   Target,
@@ -26,6 +25,7 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  LineChart,
 } from "recharts";
 
 import { AppCard, Badge, InsightBanner, ProgressRing, QuickActionButton, SkeletonLoader } from "../components/ui";
@@ -256,7 +256,7 @@ export default function DashboardPage() {
                 <div key={warning.id} className="rounded-lg border border-border bg-surface-raised p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-sm font-semibold text-text-primary">{warning.warning_type.replaceAll("_", " ")}</p>
+                      <p className="text-sm font-semibold text-text-primary">{warning.warning_type.replace(new RegExp("_", "g"), " ")}</p>
                       <p className="text-xs text-text-secondary">Severity: {warning.severity}</p>
                     </div>
                     <button

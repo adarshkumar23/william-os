@@ -464,7 +464,7 @@ export default function RulesPage() {
       value: Number.isFinite(value) ? value : 0,
       actionModule,
       actionType,
-      actionParams: nextParams,
+      actionParams: nextParams as Record<string, string | number>,
       isActive: true,
     });
     setNameTouched(true);

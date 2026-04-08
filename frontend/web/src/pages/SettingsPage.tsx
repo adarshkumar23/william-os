@@ -352,14 +352,14 @@ export default function SettingsPage() {
               onClick={() => void runGoogleToWilliamSync()}
               className="rounded-xl border border-[rgb(var(--border))] px-3 py-2 text-sm"
             >
-              Sync Google -> William
+              Sync Google → William
             </button>
             <button
               type="button"
               onClick={() => void runWilliamToGoogleSync()}
               className="rounded-xl border border-[rgb(var(--border))] px-3 py-2 text-sm"
             >
-              Sync William -> Google
+              Sync William → Google
             </button>
           </div>
           {calendarMessage ? <p className="mt-2 text-xs text-[rgb(var(--text-dim))]">{calendarMessage}</p> : null}
