@@ -275,14 +275,23 @@ export const api = {
   },
 
   rules: {
+    listRules: () => get<UserRule[]>("/rules"),
+    getTemplates: () => get<RuleTemplate[]>("/rules/templates"),
+    createRule: (payload: AnyRecord) => post<UserRule>("/rules", payload),
+    updateRule: (ruleId: string, payload: AnyRecord) =>
+      apiClient.put<ApiEnvelope<UserRule>>(`/rules/${ruleId}`, payload).then((response) => unwrap(response.data)),
+    deleteRule: (ruleId: string) => del<{ deleted: boolean }>(`/rules/${ruleId}`),
+    evaluateNow: () => post<RuleEvaluationResult>("/rules/evaluate-now"),
+
+    // Backward-compatible aliases used by existing pages.
     list: () => get<UserRule[]>("/rules"),
     templates: () => get<RuleTemplate[]>("/rules/templates"),
     create: (payload: AnyRecord) => post<UserRule>("/rules", payload),
-    update: (ruleId: string, payload: AnyRecord) => post<UserRule>(`/rules/${ruleId}`, payload),
+    update: (ruleId: string, payload: AnyRecord) =>
+      apiClient.put<ApiEnvelope<UserRule>>(`/rules/${ruleId}`, payload).then((response) => unwrap(response.data)),
     put: (ruleId: string, payload: AnyRecord) =>
       apiClient.put<ApiEnvelope<UserRule>>(`/rules/${ruleId}`, payload).then((response) => unwrap(response.data)),
     remove: (ruleId: string) => del<{ deleted: boolean }>(`/rules/${ruleId}`),
-    evaluateNow: () => post<RuleEvaluationResult>("/rules/evaluate-now"),
   },
 
   gamification: {

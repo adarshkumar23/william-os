@@ -11,6 +11,7 @@ import {
   ScrollText,
   Settings,
   Target,
+  Workflow,
 } from "lucide-react";
 import type React from "react";
 import { NavLink } from "react-router-dom";
@@ -49,7 +50,10 @@ const groups: Array<{ label: string; items: NavRow[] }> = [
   },
   {
     label: "System",
-    items: [{ to: "/settings", label: "Settings", icon: Settings }],
+    items: [
+      { to: "/rules", label: "Rules", icon: Workflow },
+      { to: "/settings", label: "Settings", icon: Settings },
+    ],
   },
 ];
 
