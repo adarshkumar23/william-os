@@ -7,6 +7,7 @@ import {
   AgentRecommendationLog,
   AgentStatus,
   AuthTokens,
+  OnboardingCompleteResponse,
   OnboardingCompletePayload,
   OnboardingStatus,
   CursorPage,
@@ -240,7 +241,7 @@ export const api = {
     loginHistory: (limit = 25) => get<LoginHistoryItem[]>("/auth/login-history", { limit }),
     onboardingStatus: () => get<OnboardingStatus>("/auth/onboarding/status"),
     completeOnboarding: (payload: OnboardingCompletePayload) =>
-      post<OnboardingStatus>("/auth/onboarding/complete", payload),
+      post<OnboardingCompleteResponse>("/auth/onboarding/complete", payload),
   },
 
   security: {

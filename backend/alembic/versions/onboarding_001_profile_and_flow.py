@@ -32,7 +32,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "users",
-        sa.Column("sleep_goal", sa.Integer(), nullable=True),
+        sa.Column("sleep_goal", sa.Float(), nullable=True),
         schema="auth",
     )
     op.add_column(
@@ -40,8 +40,7 @@ def upgrade() -> None:
         sa.Column(
             "focus_areas",
             postgresql.JSONB(astext_type=sa.Text()),
-            nullable=False,
-            server_default=sa.text("'[]'::jsonb"),
+            nullable=True,
         ),
         schema="auth",
     )

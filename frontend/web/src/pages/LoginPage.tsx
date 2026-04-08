@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../contexts/AuthContext";
+import { api } from "../services/api";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -36,9 +37,10 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      const profile = await login(email.trim(), password, totpCode.trim() || undefined);
+      await login(email.trim(), password, totpCode.trim() || undefined);
+      const onboarding = await api.auth.onboardingStatus();
       const from = (location.state as { from?: string } | null)?.from;
-      const target = profile.onboarding_completed ? from || "/dashboard" : "/onboarding";
+      const target = onboarding.completed ? from || "/dashboard" : "/onboarding";
       navigate(target, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");

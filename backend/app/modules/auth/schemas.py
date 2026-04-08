@@ -57,8 +57,8 @@ class UserProfile(BaseModel):
     timezone: str
     wake_time: str | None
     sleep_time: str
-    sleep_goal: int | None
-    focus_areas: list[str] = Field(default_factory=list)
+    sleep_goal: float | None
+    focus_areas: list[str] | None = None
     onboarding_completed: bool = False
     is_verified: bool
     totp_enabled: bool
@@ -76,14 +76,15 @@ class UserPreferencesUpdate(BaseModel):
 
 
 class OnboardingStatusResponse(BaseModel):
-    onboarding_completed: bool
+    completed: bool
 
 
 class OnboardingCompleteRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
     wake_time: str = Field(pattern=r"^\d{2}:\d{2}$")
-    sleep_goal: int = Field(ge=5, le=12)
+    sleep_goal: float = Field(ge=5, le=10)
     focus_areas: list[str] = Field(default_factory=list, max_length=8)
+    goals: str = Field(min_length=1, max_length=1000)
 
     @field_validator("focus_areas")
     @classmethod

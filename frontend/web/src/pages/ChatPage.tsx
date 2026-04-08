@@ -22,15 +22,15 @@ const AGENT_COLORS: Record<AgentName, string> = {
 
 function getWilliamModeByHour(hour: number): string {
   if (hour >= 5 && hour < 12) {
-    return "Morning Focus";
+    return "🌅 Morning Mode — Energized";
   }
   if (hour >= 12 && hour < 17) {
-    return "Afternoon Execution";
+    return "⚡ Focus Mode — Analytical";
   }
   if (hour >= 17 && hour < 22) {
-    return "Evening Reflection";
+    return "🌆 Evening Mode — Reflective";
   }
-  return "Night Recovery";
+  return "🌙 Night Mode — Recovery";
 }
 
 export default function ChatPage() {
@@ -311,8 +311,8 @@ export default function ChatPage() {
               <p className="text-xs text-text-muted capitalize">
                 {sessions.find((s) => s.id === activeSessionId)?.agent_name || "William OS"} Agent
               </p>
-              <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-accent">
-                William current mode: {williamMode}
+              <p className="mt-1 text-[11px] font-medium tracking-wide text-accent">
+                {williamMode}
               </p>
             </div>
           </div>

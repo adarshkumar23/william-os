@@ -99,6 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         saveTokens(tokens);
         const me = await api.auth.me();
+        const onboarding = await api.auth.onboardingStatus();
+        me.onboarding_completed = onboarding.completed;
         dispatch({ type: "SET_USER", payload: me });
         return me;
       },
@@ -113,6 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         saveTokens(tokens);
         const me = await api.auth.me();
+        const onboarding = await api.auth.onboardingStatus();
+        me.onboarding_completed = onboarding.completed;
         dispatch({ type: "SET_USER", payload: me });
         return me;
       },

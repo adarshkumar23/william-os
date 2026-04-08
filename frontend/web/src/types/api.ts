@@ -31,7 +31,7 @@ export type UserProfile = {
 };
 
 export type OnboardingStatus = {
-  onboarding_completed: boolean;
+  completed: boolean;
 };
 
 export type OnboardingCompletePayload = {
@@ -39,6 +39,13 @@ export type OnboardingCompletePayload = {
   wake_time: string;
   sleep_goal: number;
   focus_areas: string[];
+  goals: string;
+};
+
+export type OnboardingCompleteResponse = {
+  status: string;
+  habits_created: string[];
+  message: string;
 };
 
 export type AuthTokens = {
