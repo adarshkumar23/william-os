@@ -536,11 +536,11 @@ export const api = {
       return response.data as Blob;
     },
     weeklyReportPdf: async () => {
-      const response = await apiClient.get("/export/report/weekly.pdf", { responseType: "blob" });
+      const response = await apiClient.get("/export/report/weekly.pdf.pdf", { responseType: "blob" });
       return response.data as Blob;
     },
     monthlyReportPdf: async () => {
-      const response = await apiClient.get("/export/report/monthly.pdf", { responseType: "blob" });
+      const response = await apiClient.get("/export/report/monthly.pdf.pdf", { responseType: "blob" });
       return response.data as Blob;
     },
     customReportPdf: async (days = 30) => {

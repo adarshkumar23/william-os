@@ -1,9 +1,11 @@
+from __future__ import annotations
+from fastapi import HTTPException
+from starlette import status
 """
 WILLIAM OS — Security Utilities
 JWT tokens, password hashing, AES-256-GCM encryption for journal vault.
 """
 
-from __future__ import annotations
 
 import base64
 import hashlib
@@ -77,16 +79,27 @@ def create_refresh_token(user_id: uuid.UUID) -> str:
         algorithm=settings.jwt_algorithm,
     )
 
-
 def decode_token(token: str) -> dict:
-    """Decode and validate a JWT. Raises jwt.InvalidTokenError on failure."""
-    return jwt.decode(
-        token,
-        settings.jwt_secret_key.get_secret_value(),
-        algorithms=[settings.jwt_algorithm],
-    )
-
-
+    from fastapi import HTTPException
+    from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+    try:
+        return jwt.decode(
+            token,
+            settings.jwt_secret_key.get_secret_value(),
+            algorithms=["HS256"]
+        )
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=401,
+            detail="Token has expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except (InvalidTokenError, Exception) as e:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 # ── AES-256-GCM Encryption (Journal Vault) ──────────────────────
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
