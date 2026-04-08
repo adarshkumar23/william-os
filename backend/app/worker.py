@@ -827,7 +827,9 @@ def refresh_memory_graphs():
                     await service.update_memory(user_id=user.id)
                     await service.generate_insights(user_id=user.id)
                 except Exception as exc:
-                    logger.warning("memory_graph_refresh_failed", user_id=str(user.id), error=str(exc))
+                    logger.warning(
+                        "memory_graph_refresh_failed", user_id=str(user.id), error=str(exc)
+                    )
 
             await db.commit()
 
@@ -882,7 +884,9 @@ def scan_predictive_warnings():
                 try:
                     await service.scan_user(user_id=user.id)
                 except Exception as exc:
-                    logger.warning("predictive_warning_scan_user_failed", user_id=str(user.id), error=str(exc))
+                    logger.warning(
+                        "predictive_warning_scan_user_failed", user_id=str(user.id), error=str(exc)
+                    )
 
             await db.commit()
 

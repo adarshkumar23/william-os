@@ -248,6 +248,43 @@ export type LifeScoreHistoryPoint = {
   computed_at: string;
 };
 
+export type TimelineEvent = {
+  date: string;
+  type: string;
+  value: number;
+  label: string;
+  metadata: Record<string, unknown>;
+};
+
+export type AskTimelineResponse = {
+  answer: string;
+  relevant_dates: string[];
+};
+
+export type WeeklyReview = {
+  week_start: string;
+  week_end: string;
+  avg_score: number;
+  best_day: string;
+  worst_day: string;
+  trend: string;
+  william_summary: string;
+  highlights: string[];
+};
+
+export type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  source: string;
+  location?: string | null;
+};
+
+export type CalendarTodayResponse = {
+  events: CalendarEvent[];
+};
+
 export type BriefingScheduleItem = {
   id: string;
   title: string;

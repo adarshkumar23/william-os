@@ -13,9 +13,6 @@ from uuid import UUID
 
 import httpx
 import structlog
-from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
 from app.modules.auth.service import AuthService
@@ -32,6 +29,8 @@ from app.modules.scheduler.service import SchedulerService
 from app.modules.sleep.service import SleepService
 from app.modules.study.service import StudyService
 from app.modules.trading.service import TradingService
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 ACTION_TAG_PATTERN = re.compile(r"<action>\s*(.*?)\s*</action>", re.DOTALL)
@@ -76,7 +75,9 @@ class ChatService:
         await self.db.flush()
         return True
 
-    async def get_messages(self, session_id: UUID, user_id: UUID, limit: int = 50) -> list[ChatMessage]:
+    async def get_messages(
+        self, session_id: UUID, user_id: UUID, limit: int = 50
+    ) -> list[ChatMessage]:
         result = await self.db.execute(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
@@ -86,7 +87,9 @@ class ChatService:
         )
         return list(reversed(result.scalars().all()))
 
-    async def send_message(self, session_id: UUID, user_id: UUID, content: str) -> tuple[ChatMessage, ChatMessage]:
+    async def send_message(
+        self, session_id: UUID, user_id: UUID, content: str
+    ) -> tuple[ChatMessage, ChatMessage]:
         # Log user message
         user_msg = ChatMessage(
             session_id=session_id,
@@ -97,40 +100,42 @@ class ChatService:
         self.db.add(user_msg)
         await self.db.flush()
         await self.db.refresh(user_msg)
-        
+
         # Load session & history
         session = await self.db.get(ChatSession, session_id)
         if not session or session.user_id != user_id:
             raise ValueError("Session not found")
-            
+
         session.updated_at = datetime.now(UTC)
         await self.db.flush()
 
         history = await self.get_messages(session_id, user_id, limit=20)
-        
+
         # Determine and fetch context based on agent
         context = await self._gather_context(user_id, session.agent_name)
         system_prompt = get_agent_prompt(session.agent_name).format(**context)
 
         # Call Gemini
         assistant_content = await self._call_gemini(system_prompt, history, content)
-        
+
         # Parse and execute actions
         actions = ActionParser.parse_actions(assistant_content)
         display_text = ActionParser.strip_actions(assistant_content)
-        
+
         actions_taken = []
         if actions:
             executor = ActionExecutor(self.db, user_id)
             for act in actions:
                 res = await executor.execute(act)
-                actions_taken.append({
-                    "type": act.type,
-                    "params": act.params,
-                    "success": res.success,
-                    "message": res.message,
-                    "data": res.data
-                })
+                actions_taken.append(
+                    {
+                        "type": act.type,
+                        "params": act.params,
+                        "success": res.success,
+                        "message": res.message,
+                        "data": res.data,
+                    }
+                )
 
         # Parse and execute JSON calendar actions:
         # <action>{"type": "calendar_create", ...}</action>
@@ -160,11 +165,11 @@ class ChatService:
 
         # Remove JSON action tags from visible response text.
         display_text = ACTION_TAG_PATTERN.sub("", display_text).strip()
-        
+
         # Prepare final assistant message
         if not display_text.strip():
             display_text = "I have completed those tasks for you."
-            
+
         if actions_taken:
             confirmations = [a["message"] for a in actions_taken if a["success"]]
             if confirmations:
@@ -187,10 +192,10 @@ class ChatService:
         auth_service = AuthService(self.db)
         profile = await auth_service.get_profile(user_id)
         now = datetime.now()
-        
+
         memory_service = MemoryService(self.db)
         memory_insights = await memory_service.get_relevant_memory_context(user_id)
-        
+
         # Defaults for OS Agent (injects everything)
         context = {
             "name": profile.full_name or profile.username,
@@ -212,24 +217,28 @@ class ChatService:
             "executive_data": "None",
             "recovery_data": "None",
         }
-        
+
         try:
             if agent_name in [AgentName.OS, AgentName.EXECUTIVE]:
                 sched = SchedulerService(self.db)
                 plan = await sched.get_today(user_id)
-                context["schedule_summary"] = ", ".join(f"{b.start_time.strftime('%H:%M')} {b.title}" for b in plan.blocks[:5])
-                
+                context["schedule_summary"] = ", ".join(
+                    f"{b.start_time.strftime('%H:%M')} {b.title}" for b in plan.blocks[:5]
+                )
+
             if agent_name in [AgentName.OS, AgentName.HEALTH, AgentName.RECOVERY]:
                 sleep = SleepService(self.db)
                 stats = await sleep.get_sleep_stats(user_id)
                 context["sleep_hours"] = stats.avg_duration / 60
                 context["sleep_quality"] = stats.avg_quality_30d
-                
+
                 fitness = FitnessService(self.db)
                 en = await fitness.get_energy_forecast(user_id, date.today())
                 if en and en.hourly_scores:
-                    context["energy"] = list(en.hourly_scores.values())[0] if en.hourly_scores else 50
-                    
+                    context["energy"] = (
+                        list(en.hourly_scores.values())[0] if en.hourly_scores else 50
+                    )
+
             if agent_name in [AgentName.OS, AgentName.HEALTH]:
                 meds = MedicineService(self.db)
                 adh = await meds.get_adherence_stats(user_id)
@@ -240,32 +249,38 @@ class ChatService:
                 cards = await study.get_due_cards(user_id, date.today())
                 context["cards_due"] = len(cards)
                 context["study_data"] = f"Cards due: {len(cards)}"
-                
+
             if agent_name in [AgentName.OS, AgentName.TRADING]:
                 trading = TradingService(self.db)
                 wl = await trading.list_watchlist(user_id)
                 context["trading_data"] = f"Watchlist count: {len(wl)}"
-                
+
             if agent_name in [AgentName.OS, AgentName.EXECUTIVE]:
                 dec = DecisionService(self.db)
                 decs = await dec.list_decisions(user_id)
                 context["decisions_count"] = len([d for d in decs if d.status == "pending"])
-                context["executive_data"] = f"Pending decisions: {context['decisions_count']}\nSchedule: {context['schedule_summary']}"
-                
+                context["executive_data"] = (
+                    f"Pending decisions: {context['decisions_count']}\nSchedule: {context['schedule_summary']}"
+                )
+
             if agent_name in [AgentName.OS]:
                 ls_service = LifeScoreService(self.db)
                 score = await ls_service.get_latest_score(user_id)
                 context["life_score"] = int(score.score)
-                
+
             if agent_name in [AgentName.RECOVERY]:
-                context["recovery_data"] = f"Energy forecast suggests dips inside low hours. Please ensure prompt alignment."
+                context["recovery_data"] = (
+                    "Energy forecast suggests dips inside low hours. Please ensure prompt alignment."
+                )
 
         except Exception as e:
             logger.warning("chat_context_gather_error", error=str(e))
-            
+
         return context
 
-    async def _call_gemini(self, system_prompt: str, history: list[ChatMessage], new_content: str) -> str:
+    async def _call_gemini(
+        self, system_prompt: str, history: list[ChatMessage], new_content: str
+    ) -> str:
         api_key = self.settings.gemini_api_key.get_secret_value()
         if not api_key:
             return "William Salvator is running in limited mode. AI functionality is not available."
@@ -277,7 +292,7 @@ class ChatService:
                 continue
             r = "user" if msg.role == MessageRole.USER else "model"
             messages.append({"role": r, "parts": [{"text": msg.content}]})
-        
+
         messages.append({"role": "user", "parts": [{"text": new_content}]})
 
         payload = {

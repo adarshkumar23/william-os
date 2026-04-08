@@ -7,9 +7,11 @@ import {
   AgentRecommendationLog,
   AgentStatus,
   AuthTokens,
+  AskTimelineResponse,
   OnboardingCompleteResponse,
   OnboardingCompletePayload,
   OnboardingStatus,
+  CalendarTodayResponse,
   CursorPage,
   GamificationProfile,
   GamificationRecord,
@@ -28,6 +30,7 @@ import {
   HabitCheckIn,
   LifeScore,
   LifeScoreHistoryPoint,
+  TimelineEvent,
   JournalEntryDecrypted,
   JournalEntryMeta,
   Medicine,
@@ -48,6 +51,7 @@ import {
   UserRule,
   UserProfile,
   VoiceHistoryItem,
+  WeeklyReview,
   Workout,
   ChatSession,
   ChatSessionListItem,
@@ -266,6 +270,21 @@ export const api = {
   briefing: {
     today: () => get<MorningBriefing>("/briefing/today"),
     sendNow: () => post<MorningBriefingSendResult>("/briefing/send-now"),
+    weeklyReview: () => get<WeeklyReview>("/briefing/weekly-review"),
+  },
+
+  calendar: {
+    today: async () => {
+      const response = await apiClient.get<CalendarTodayResponse>("/calendar/today");
+      return response.data;
+    },
+    upcoming: async (days = 7) => {
+      const response = await apiClient.get<{ events: Array<Record<string, unknown>>; count: number }>(
+        "/calendar/upcoming",
+        { params: { days } },
+      );
+      return response.data;
+    },
   },
 
   feed: {
@@ -451,6 +470,8 @@ export const api = {
     adjustments: () => get<Record<string, unknown>>("/intelligence/adjustments"),
     lifeScore: () => get<LifeScore>("/intelligence/life-score"),
     lifeScoreHistory: (days = 30) => get<LifeScoreHistoryPoint[]>("/intelligence/life-score/history", { days }),
+    timeline: (days = 90) => get<TimelineEvent[]>("/intelligence/timeline", { days }),
+    askTimeline: (question: string) => post<AskTimelineResponse>("/intelligence/ask-timeline", { question }),
     warnings: () => get<PredictiveWarning[]>("/intelligence/warnings"),
     scanWarnings: () => post<PredictiveWarning[]>("/intelligence/warnings/scan"),
   },

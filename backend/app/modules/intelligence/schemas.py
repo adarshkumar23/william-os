@@ -5,7 +5,7 @@ Request and response contracts for intelligence endpoints.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -92,3 +92,20 @@ class PredictiveWarningResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TimelineEvent(BaseModel):
+    date: date
+    type: str
+    value: float
+    label: str
+    metadata: dict = Field(default_factory=dict)
+
+
+class AskTimelineRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+class AskTimelineResponse(BaseModel):
+    answer: str
+    relevant_dates: list[str] = Field(default_factory=list)

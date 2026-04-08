@@ -1,10 +1,11 @@
 import os
-import requests
 from datetime import datetime, timedelta
-from typing import List, Optional
+
+import requests
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
-from .models import GoogleToken, CachedEvent
+
+from .models import CachedEvent, GoogleToken
 
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -28,13 +29,16 @@ def get_auth_url(user_id) -> str:
 
 
 async def exchange_code(code: str, db: AsyncSession, user_id) -> dict:
-    resp = requests.post(TOKEN_URL, data={
-        "code": code,
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code",
-    })
+    resp = requests.post(
+        TOKEN_URL,
+        data={
+            "code": code,
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code",
+        },
+    )
     data = resp.json()
     if "error" in data:
         raise Exception(data.get("error_description", data["error"]))
@@ -50,7 +54,7 @@ async def exchange_code(code: str, db: AsyncSession, user_id) -> dict:
     return {"status": "connected"}
 
 
-async def _get_access_token(db: AsyncSession, user_id) -> Optional[str]:
+async def _get_access_token(db: AsyncSession, user_id) -> str | None:
     result = await db.execute(select(GoogleToken).where(GoogleToken.user_id == str(user_id)))
     token = result.scalar_one_or_none()
     if not token or not token.access_token:
@@ -58,12 +62,15 @@ async def _get_access_token(db: AsyncSession, user_id) -> Optional[str]:
     if token.token_expiry and datetime.utcnow() > token.token_expiry:
         if not token.refresh_token:
             return None
-        resp = requests.post(TOKEN_URL, data={
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "refresh_token": token.refresh_token,
-            "grant_type": "refresh_token",
-        })
+        resp = requests.post(
+            TOKEN_URL,
+            data={
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "refresh_token": token.refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
         data = resp.json()
         if "access_token" in data:
             token.access_token = data["access_token"]
@@ -72,7 +79,7 @@ async def _get_access_token(db: AsyncSession, user_id) -> Optional[str]:
     return token.access_token
 
 
-async def fetch_events(db: AsyncSession, user_id, days: int = 7) -> List[dict]:
+async def fetch_events(db: AsyncSession, user_id, days: int = 7) -> list[dict]:
     try:
         access_token = await _get_access_token(db, user_id)
         if not access_token:
@@ -82,32 +89,51 @@ async def fetch_events(db: AsyncSession, user_id, days: int = 7) -> List[dict]:
         resp = requests.get(
             "https://www.googleapis.com/calendar/v3/calendars/primary/events",
             headers={"Authorization": f"Bearer {access_token}"},
-            params={"timeMin": now.isoformat()+"Z", "timeMax": end.isoformat()+"Z",
-                    "maxResults": 50, "singleEvents": True, "orderBy": "startTime"}
+            params={
+                "timeMin": now.isoformat() + "Z",
+                "timeMax": end.isoformat() + "Z",
+                "maxResults": 50,
+                "singleEvents": True,
+                "orderBy": "startTime",
+            },
         )
         events = []
         for item in resp.json().get("items", []):
             start = item["start"].get("dateTime", item["start"].get("date", ""))
             end_t = item["end"].get("dateTime", item["end"].get("date", ""))
-            events.append({"id": item.get("id"), "title": item.get("summary", "No title"),
-                           "start": start, "end": end_t, "location": item.get("location", ""),
-                           "description": item.get("description", ""), "source": "google"})
+            events.append(
+                {
+                    "id": item.get("id"),
+                    "title": item.get("summary", "No title"),
+                    "start": start,
+                    "end": end_t,
+                    "location": item.get("location", ""),
+                    "description": item.get("description", ""),
+                    "source": "google",
+                }
+            )
         await _cache_events(db, user_id, events)
         return events
     except Exception:
         return []
 
 
-async def create_event(db: AsyncSession, user_id, title, start, end, description="", location="") -> dict:
+async def create_event(
+    db: AsyncSession, user_id, title, start, end, description="", location=""
+) -> dict:
     access_token = await _get_access_token(db, user_id)
     if not access_token:
         raise Exception("Google Calendar not connected")
     resp = requests.post(
         "https://www.googleapis.com/calendar/v3/calendars/primary/events",
         headers={"Authorization": f"Bearer {access_token}"},
-        json={"summary": title, "location": location, "description": description,
-              "start": {"dateTime": start, "timeZone": "UTC"},
-              "end": {"dateTime": end, "timeZone": "UTC"}}
+        json={
+            "summary": title,
+            "location": location,
+            "description": description,
+            "start": {"dateTime": start, "timeZone": "UTC"},
+            "end": {"dateTime": end, "timeZone": "UTC"},
+        },
     )
     data = resp.json()
     return {"id": data.get("id"), "title": title, "status": "created"}
@@ -119,7 +145,7 @@ async def delete_event(db: AsyncSession, user_id, event_id) -> dict:
         raise Exception("Google Calendar not connected")
     requests.delete(
         f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}",
-        headers={"Authorization": f"Bearer {access_token}"}
+        headers={"Authorization": f"Bearer {access_token}"},
     )
     return {"status": "deleted"}
 
@@ -136,10 +162,20 @@ async def disconnect(db: AsyncSession, user_id):
 
 
 async def _cache_events(db: AsyncSession, user_id, events):
-    await db.execute(delete(CachedEvent).where(
-        CachedEvent.user_id == str(user_id), CachedEvent.source == "google"))
+    await db.execute(
+        delete(CachedEvent).where(
+            CachedEvent.user_id == str(user_id), CachedEvent.source == "google"
+        )
+    )
     for e in events:
-        db.add(CachedEvent(user_id=str(user_id), source="google",
-                           event_id=e.get("id"), title=e.get("title"),
-                           location=e.get("location"), description=e.get("description")))
+        db.add(
+            CachedEvent(
+                user_id=str(user_id),
+                source="google",
+                event_id=e.get("id"),
+                title=e.get("title"),
+                location=e.get("location"),
+                description=e.get("description"),
+            )
+        )
     await db.commit()

@@ -33,3 +33,13 @@ async def send_now(
     service = MorningBriefingService(db)
     sent = await service.send_briefing(user_id=user_id)
     return success(sent.model_dump(mode="json"))
+
+
+@router.get("/weekly-review")
+async def get_weekly_review(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = MorningBriefingService(db)
+    review = await service.get_weekly_review(user_id=user_id)
+    return success(review.model_dump(mode="json"))

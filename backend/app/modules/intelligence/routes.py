@@ -9,7 +9,7 @@ import uuid
 
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
-from app.modules.intelligence.schemas import CrossModuleRuleCreate
+from app.modules.intelligence.schemas import AskTimelineRequest, CrossModuleRuleCreate
 from app.modules.intelligence.service import IntelligenceService, LifeScoreService
 from app.modules.intelligence.warnings_service import PredictiveWarningService
 from app.shared.types import success
@@ -101,3 +101,25 @@ async def scan_predictive_warnings(
     service = PredictiveWarningService(db)
     warnings = await service.scan_user(user_id=user_id)
     return success([item.model_dump(mode="json") for item in warnings])
+
+
+@router.get("/timeline")
+async def get_timeline(
+    days: int = Query(default=90, ge=7, le=365),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = IntelligenceService(db)
+    events = await service.get_timeline(user_id=user_id, days=days)
+    return success([item.model_dump(mode="json") for item in events])
+
+
+@router.post("/ask-timeline")
+async def ask_timeline(
+    payload: AskTimelineRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = IntelligenceService(db)
+    response = await service.ask_timeline(user_id=user_id, question=payload.question)
+    return success(response)

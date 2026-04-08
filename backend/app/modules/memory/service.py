@@ -395,10 +395,7 @@ class MemoryService:
             .where(ModuleSignal.user_id == user_id)
             .where(ModuleSignal.source_module == "fitness")
             .where(ModuleSignal.signal_type == "energy")
-            .where(
-                ModuleSignal.recorded_at
-                >= datetime.combine(cutoff, datetime.min.time())
-            )
+            .where(ModuleSignal.recorded_at >= datetime.combine(cutoff, datetime.min.time()))
         )
 
         by_day = defaultdict(list)
@@ -487,10 +484,7 @@ class MemoryService:
         score_rows = await self.db.execute(
             select(LifeScore.computed_at, LifeScore.score)
             .where(LifeScore.user_id == user_id)
-            .where(
-                LifeScore.computed_at
-                >= datetime.combine(cutoff, datetime.min.time())
-            )
+            .where(LifeScore.computed_at >= datetime.combine(cutoff, datetime.min.time()))
         )
         scores_by_day: dict[date, list[float]] = defaultdict(list)
         for computed_at, score in score_rows.all():
@@ -577,9 +571,7 @@ class MemoryService:
         top_days = procrastination.get("days") or []
         top_hours = procrastination.get("hours") or []
         if top_days and top_hours:
-            insights.append(
-                f"You procrastinate most on {top_days[0]} around {top_hours[0]}."
-            )
+            insights.append(f"You procrastinate most on {top_days[0]} around {top_hours[0]}.")
 
         focus = by_key.get("best_focus_hours", {})
         best_hours = focus.get("best_hours") or []

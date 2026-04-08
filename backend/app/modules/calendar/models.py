@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime
 from datetime import datetime
+
 from app.core.database import Base
+from sqlalchemy import Column, DateTime, Integer, String, Text
+
 
 class GoogleToken(Base):
     __tablename__ = "google_tokens"
@@ -13,6 +15,7 @@ class GoogleToken(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+
 class AppleCredential(Base):
     __tablename__ = "apple_credentials"
     __table_args__ = {"schema": "calendar"}
@@ -22,6 +25,7 @@ class AppleCredential(Base):
     app_password_encrypted = Column(Text)
     caldav_url = Column(Text, default="https://caldav.icloud.com")
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class CachedEvent(Base):
     __tablename__ = "cached_events"

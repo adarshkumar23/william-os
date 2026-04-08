@@ -9,17 +9,17 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, Enum as SAEnum, Float, ForeignKey, String, Text
+from app.core.database import Base
+from sqlalchemy import Boolean, Float, ForeignKey, String, Text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
-
 
 class UserRole(str, Enum):
-    OWNER = "owner"        # Primary user — full access
-    FAMILY = "family"      # Family member — scoped access
-    GUEST = "guest"        # Limited view access
+    OWNER = "owner"  # Primary user — full access
+    FAMILY = "family"  # Family member — scoped access
+    GUEST = "guest"  # Limited view access
 
 
 class User(Base):
@@ -65,7 +65,7 @@ class User(Base):
     journal_passphrase_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
-    devices: Mapped[list["UserDevice"]] = relationship(back_populates="user", lazy="selectin")
+    devices: Mapped[list[UserDevice]] = relationship(back_populates="user", lazy="selectin")
 
     def __repr__(self) -> str:
         return f"<User {self.username} ({self.role.value})>"

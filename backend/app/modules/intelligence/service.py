@@ -17,8 +17,12 @@ import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call, set_life_score
+from app.modules.auth.models import User
+from app.modules.decisions.models import Decision
 from app.modules.decisions.service import DecisionService
+from app.modules.fitness.models import WorkoutLog
 from app.modules.fitness.service import FitnessService
+from app.modules.habits.models import Habit, HabitCheckIn
 from app.modules.habits.service import HabitsService
 from app.modules.intelligence.models import CrossModuleRule, LifeScore, ModuleSignal
 from app.modules.intelligence.schemas import (
@@ -29,16 +33,22 @@ from app.modules.intelligence.schemas import (
     LifeScoreHistoryPoint,
     LifeScoreResponse,
     ModuleSignalResponse,
+    TimelineEvent,
 )
+from app.modules.journal.models import JournalEntry
 from app.modules.journal.service import JournalService
 from app.modules.medicine.service import MedicineService
+from app.modules.sleep.models import SleepRecord
 from app.modules.sleep.service import SleepService
+from app.modules.study.models import StudySession
 from app.modules.study.service import StudyService
+from app.modules.trading.models import TradeLog
 from app.modules.trading.service import TradingService
 from sqlalchemy import select
 
 if TYPE_CHECKING:
     import uuid
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -67,6 +77,7 @@ LIFE_SCORE_WEIGHTS = {
 class IntelligenceService:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.settings = get_settings()
 
     async def collect_signals(self, user_id: uuid.UUID) -> list[ModuleSignalResponse]:
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -234,6 +245,312 @@ class IntelligenceService:
             adjustments=dict(grouped),
         )
 
+    async def get_timeline(
+        self,
+        user_id: uuid.UUID,
+        days: int = 90,
+    ) -> list[TimelineEvent]:
+        window_days = max(1, days)
+        start_date = date.today() - timedelta(days=window_days - 1)
+        start_dt = datetime.combine(start_date, datetime.min.time())
+
+        timeline: list[TimelineEvent] = []
+
+        sleep_rows = await self.db.execute(
+            select(SleepRecord)
+            .where(SleepRecord.user_id == user_id)
+            .where(SleepRecord.sleep_date >= start_date)
+            .order_by(SleepRecord.sleep_date.desc())
+        )
+        for row in sleep_rows.scalars().all():
+            duration_hours = round(float(row.sleep_duration_minutes) / 60.0, 2)
+            timeline.append(
+                TimelineEvent(
+                    date=row.sleep_date,
+                    type="sleep",
+                    value=duration_hours,
+                    label=f"Slept {duration_hours:.1f}h",
+                    metadata={"quality": float(row.sleep_quality)},
+                )
+            )
+
+        habit_count_result = await self.db.execute(
+            select(Habit.id).where(Habit.user_id == user_id).where(Habit.is_active.is_(True))
+        )
+        total_habits = len(habit_count_result.scalars().all())
+        checkin_rows = await self.db.execute(
+            select(HabitCheckIn)
+            .join(Habit, Habit.id == HabitCheckIn.habit_id)
+            .where(Habit.user_id == user_id)
+            .where(HabitCheckIn.check_date >= start_date)
+            .order_by(HabitCheckIn.check_date.asc())
+        )
+        by_day: dict[date, int] = defaultdict(int)
+        for row in checkin_rows.scalars().all():
+            if row.completed and not row.skipped:
+                by_day[row.check_date] += 1
+
+        streak = 0
+        for day in sorted(by_day.keys()):
+            completed = by_day.get(day, 0)
+            completion_pct = (
+                round((completed / total_habits) * 100.0, 2) if total_habits > 0 else 0.0
+            )
+            if total_habits > 0 and completion_pct >= 100.0:
+                streak += 1
+            else:
+                streak = 0
+            timeline.append(
+                TimelineEvent(
+                    date=day,
+                    type="habits",
+                    value=completion_pct,
+                    label=f"{completed}/{total_habits} habits",
+                    metadata={"streak": streak, "completed": completed, "total": total_habits},
+                )
+            )
+
+        journal_rows = await self.db.execute(
+            select(JournalEntry)
+            .where(JournalEntry.user_id == user_id)
+            .where(JournalEntry.entry_date >= start_date)
+            .order_by(JournalEntry.entry_date.desc())
+        )
+        for row in journal_rows.scalars().all():
+            mood = str(row.mood.value if row.mood else "okay")
+            timeline.append(
+                TimelineEvent(
+                    date=row.entry_date,
+                    type="mood",
+                    value=float(MOOD_SCORE.get(mood.lower(), 55.0)),
+                    label=mood,
+                    metadata={"mood": mood},
+                )
+            )
+
+        trade_rows = await self.db.execute(
+            select(TradeLog)
+            .where(TradeLog.user_id == user_id)
+            .where(TradeLog.trade_date >= start_date)
+            .order_by(TradeLog.trade_date.desc(), TradeLog.created_at.desc())
+        )
+        for row in trade_rows.scalars().all():
+            action = str(row.action or "").lower()
+            pnl = float(row.total_value if action == "sell" else -row.total_value)
+            sign = "+" if pnl >= 0 else "-"
+            timeline.append(
+                TimelineEvent(
+                    date=row.trade_date,
+                    type="trade",
+                    value=pnl,
+                    label=f"Trade: {sign}${abs(pnl):.2f}",
+                    metadata={"symbol": row.symbol, "action": row.action},
+                )
+            )
+
+        decision_rows = await self.db.execute(
+            select(Decision)
+            .where(Decision.user_id == user_id)
+            .where(Decision.created_at >= start_dt)
+            .order_by(Decision.created_at.desc())
+        )
+        for row in decision_rows.scalars().all():
+            status = str(row.status or "").lower()
+            is_completed = (
+                status in {"reviewed", "completed", "closed"}
+                or row.reviewed_at is not None
+                or row.outcome_rating is not None
+            )
+            if not is_completed:
+                continue
+            event_date = (
+                row.reviewed_at.date()
+                if row.reviewed_at is not None
+                else row.chosen_at.date()
+                if row.chosen_at is not None
+                else row.created_at.date()
+            )
+            if event_date < start_date:
+                continue
+            timeline.append(
+                TimelineEvent(
+                    date=event_date,
+                    type="decision",
+                    value=float(row.outcome_rating or 0.0),
+                    label=row.title,
+                    metadata={"status": row.status},
+                )
+            )
+
+        score_rows = await self.db.execute(
+            select(LifeScore)
+            .where(LifeScore.user_id == user_id)
+            .where(LifeScore.computed_at >= start_dt)
+            .order_by(LifeScore.computed_at.desc())
+        )
+        for row in score_rows.scalars().all():
+            timeline.append(
+                TimelineEvent(
+                    date=row.computed_at.date(),
+                    type="life_score",
+                    value=float(row.score),
+                    label=f"Score: {round(float(row.score))}",
+                    metadata={"components": row.component_scores or {}},
+                )
+            )
+
+        workout_rows = await self.db.execute(
+            select(WorkoutLog)
+            .where(WorkoutLog.user_id == user_id)
+            .where(WorkoutLog.workout_date >= start_date)
+            .order_by(WorkoutLog.workout_date.desc())
+        )
+        for row in workout_rows.scalars().all():
+            timeline.append(
+                TimelineEvent(
+                    date=row.workout_date,
+                    type="workout",
+                    value=float(row.duration_minutes),
+                    label=f"Workout: {row.duration_minutes}min",
+                    metadata={"workout_type": row.workout_type},
+                )
+            )
+
+        study_rows = await self.db.execute(
+            select(StudySession)
+            .where(StudySession.user_id == user_id)
+            .where(StudySession.session_date >= start_date)
+            .order_by(StudySession.session_date.desc())
+        )
+        for row in study_rows.scalars().all():
+            comprehension = float(row.comprehension_score or 0.0)
+            timeline.append(
+                TimelineEvent(
+                    date=row.session_date,
+                    type="study",
+                    value=comprehension,
+                    label=f"Study: {comprehension:.0f}% comprehension",
+                    metadata={"duration_minutes": row.duration_minutes},
+                )
+            )
+
+        timeline.sort(key=lambda item: (item.date, item.type), reverse=True)
+        return timeline
+
+    async def ask_timeline(self, user_id: uuid.UUID, question: str) -> dict[str, object]:
+        timeline = await self.get_timeline(user_id=user_id, days=90)
+        if not timeline:
+            return {
+                "answer": (
+                    "Not enough timeline data yet. Start logging sleep, habits, "
+                    "and workouts to unlock this analysis."
+                ),
+                "relevant_dates": [],
+            }
+
+        user = await self.db.get(User, user_id)
+        name = "User"
+        if user is not None:
+            name = str(user.display_name or user.full_name or user.username)
+
+        timeline_summary = self._build_timeline_summary(timeline)
+        answer = await self._ask_gemini_timeline(
+            name=name,
+            question=question,
+            timeline_summary=timeline_summary,
+        )
+        relevant_dates = self._extract_relevant_dates(timeline)
+        return {"answer": answer, "relevant_dates": relevant_dates}
+
+    async def _ask_gemini_timeline(self, name: str, question: str, timeline_summary: str) -> str:
+        api_key = self.settings.gemini_api_key.get_secret_value()
+        if not api_key:
+            return self._fallback_timeline_answer(
+                question=question,
+                timeline_summary=timeline_summary,
+            )
+
+        prompt = (
+            f"You are William Salvator analyzing {name}'s life data.\n"
+            f"Question: {question}\n"
+            f"Timeline data (last 90 days): {timeline_summary}\n"
+            "Answer directly with specific dates and numbers. Max 3 sentences."
+        )
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.35,
+                "maxOutputTokens": 220,
+            },
+        }
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.settings.gemini_model}:generateContent"
+        )
+
+        started = perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    url,
+                    headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                    json=payload,
+                )
+                response.raise_for_status()
+                raw = response.json()
+
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
+            text = raw["candidates"][0]["content"]["parts"][0]["text"]
+            cleaned = " ".join(str(text).strip().split())
+            return cleaned or self._fallback_timeline_answer(
+                question=question,
+                timeline_summary=timeline_summary,
+            )
+        except Exception as exc:
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
+            logger.warning("ask_timeline_failed", error=str(exc))
+            return self._fallback_timeline_answer(
+                question=question,
+                timeline_summary=timeline_summary,
+            )
+
+    @staticmethod
+    def _extract_relevant_dates(timeline: list[TimelineEvent]) -> list[str]:
+        dates: list[str] = []
+        seen: set[str] = set()
+        for event in timeline:
+            value = event.date.isoformat()
+            if value in seen:
+                continue
+            seen.add(value)
+            dates.append(value)
+            if len(dates) >= 6:
+                break
+        return dates
+
+    @staticmethod
+    def _build_timeline_summary(timeline: list[TimelineEvent]) -> str:
+        lines: list[str] = []
+        for event in timeline[:240]:
+            lines.append(
+                f"{event.date.isoformat()} | {event.type} | value={event.value:.2f} | {event.label}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _fallback_timeline_answer(question: str, timeline_summary: str) -> str:
+        _ = question
+        if not timeline_summary:
+            return "I do not have enough timeline data to answer that yet."
+        return (
+            "From the recent timeline, your strongest periods align with "
+            "higher life-score and sleep consistency days. "
+            "Your weaker periods show clustered low-sleep and low-completion habit events. "
+            "Ask about a specific month or module and I will narrow it with exact dates."
+        )
+
     async def _gather_signal_triplets(
         self,
         user_id: uuid.UUID,
@@ -260,8 +577,7 @@ class IntelligenceService:
             offset=0,
         )
         streak_drop = any(
-            (habit.best_streak or 0) >= 3 and (habit.current_streak or 0) == 0
-            for habit in habits
+            (habit.best_streak or 0) >= 3 and (habit.current_streak or 0) == 0 for habit in habits
         )
         consistency = 0.0
         if habits:
@@ -315,9 +631,9 @@ class IntelligenceService:
         study_service = StudyService(self.db)
         study_progress = await study_service.get_progress(user_id=user_id)
         if study_progress:
-            avg_comprehension = sum(
-                item.avg_comprehension for item in study_progress
-            ) / len(study_progress)
+            avg_comprehension = sum(item.avg_comprehension for item in study_progress) / len(
+                study_progress
+            )
             due_penalty = min(20.0, sum(item.cards_due for item in study_progress) * 2.0)
             focus_score = max(0.0, (avg_comprehension * 10.0) - due_penalty)
         else:
@@ -454,7 +770,11 @@ class LifeScoreService:
         latest = result.scalar_one_or_none()
 
         if latest:
-            age = datetime.now(UTC).replace(tzinfo=None) - latest.computed_at.replace(tzinfo=None) if latest.computed_at else timedelta(0).replace(tzinfo=None)
+            age = timedelta.max
+            if latest.computed_at:
+                age = datetime.now(UTC).replace(tzinfo=None) - latest.computed_at.replace(
+                    tzinfo=None
+                )
             if age <= timedelta(minutes=180):
                 return LifeScoreResponse.model_validate(latest)
 
@@ -598,12 +918,9 @@ class LifeScoreService:
         low_name, low_score = ranked[0]
         high_name, high_score = ranked[-1]
         return (
-            (
-                f"Your Life Score is {score:.1f}, "
-                f"with the biggest drag from {low_name} ({low_score:.0f}). "
-            )
-            + (
-                f"Your strongest area is {high_name} ({high_score:.0f}), "
-                "so keep that consistency while fixing the weakest area."
-            )
+            f"Your Life Score is {score:.1f}, "
+            f"with the biggest drag from {low_name} ({low_score:.0f}). "
+        ) + (
+            f"Your strongest area is {high_name} ({high_score:.0f}), "
+            "so keep that consistency while fixing the weakest area."
         )

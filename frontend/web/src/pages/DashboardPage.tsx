@@ -1,77 +1,79 @@
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   Activity,
-  BookOpen,
-  Bot,
-  Dumbbell,
+  CalendarDays,
+  Clock3,
+  Flame,
   HeartPulse,
+  LineChart,
   Moon,
-  NotebookPen,
-  Pill,
   Sparkles,
   Target,
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
+import { AppCard, Badge, InsightBanner, ProgressRing, QuickActionButton, SkeletonLoader } from "../components/ui";
 import { useAuth } from "../contexts/AuthContext";
 import { fadeInUp, reduceMotion, staggerContainer } from "../lib/animations";
 import { api } from "../services/api";
 import {
-  ActivityFeedItem,
-  AgentStatus,
+  CalendarTodayResponse,
+  CalendarEvent,
   DailyPlan,
-  GamificationProfile,
+  EnergyForecast,
   Habit,
   LifeScore,
   LifeScoreHistoryPoint,
-  MedicineReminder,
-  MorningBriefing,
-  PredictiveWarning,
+  TimelineEvent,
+  WeeklyReview,
 } from "../types/api";
-import {
-  AppCard,
-  Badge,
-  InsightBanner,
-  ProgressRing,
-  QuickActionButton,
-  SkeletonLoader,
-  StatCard,
-  TimelineCard,
-} from "../components/ui";
 
-function numeric(value: unknown, fallback = 0) {
-  if (typeof value === "number") {
-    return value;
+function toDate(value: string) {
+  if (value.includes("T")) {
+    return new Date(value);
   }
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (!Number.isNaN(parsed)) {
-      return parsed;
-    }
+  return new Date(`${value}T00:00:00`);
+}
+
+function mapTrendVariant(value: string) {
+  if (value === "improving") {
+    return "success" as const;
   }
-  return fallback;
+  if (value === "declining") {
+    return "danger" as const;
+  }
+  return "warning" as const;
 }
 
 export default function DashboardPage() {
   const [plan, setPlan] = useState<DailyPlan | null>(null);
   const [habits, setHabits] = useState<Habit[]>([]);
-  const [reminders, setReminders] = useState<MedicineReminder[]>([]);
-  const [energyForecast, setEnergyForecast] = useState<Record<string, unknown> | null>(null);
   const [lifeScore, setLifeScore] = useState<LifeScore | null>(null);
   const [lifeScoreHistory, setLifeScoreHistory] = useState<LifeScoreHistoryPoint[]>([]);
-  const [gamificationProfile, setGamificationProfile] = useState<GamificationProfile | null>(null);
-  const [activityFeedItems, setActivityFeedItems] = useState<ActivityFeedItem[]>([]);
-  const [briefing, setBriefing] = useState<MorningBriefing | null>(null);
-  const [warnings, setWarnings] = useState<PredictiveWarning[]>([]);
-  const [agentStatuses, setAgentStatuses] = useState<AgentStatus[]>([]);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [energyForecast, setEnergyForecast] = useState<EnergyForecast | null>(null);
+  const [weeklyReview, setWeeklyReview] = useState<WeeklyReview | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [briefingOpen, setBriefingOpen] = useState(true);
 
-  const navigate = useNavigate();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
   const fadeMotion = reduceMotion(shouldReduceMotion, fadeInUp);
 
@@ -80,45 +82,37 @@ export default function DashboardPage() {
     setError("");
 
     try {
-      const [
-        todayPlan,
-        habitList,
-        upcoming,
-        energy,
-        score,
-        scoreHistory,
-        todayBriefing,
-        profile,
-        feedPage,
-        warningRows,
-        chatSessions,
-      ] = await Promise.all([
-        api.scheduler.today().catch(() => null),
-        api.habits.list({ active_only: true, limit: 100, offset: 0 }),
-        api.medicine.upcoming(180).catch(() => []),
-        api.fitness.energyByDate(format(new Date(), "yyyy-MM-dd")).catch(() => null),
-        api.intelligence.lifeScore().catch(() => null),
-        api.intelligence.lifeScoreHistory(30).catch(() => []),
-        api.briefing.today().catch(() => null),
-        api.gamification.profile().catch(() => null),
-        api.feed.list({ limit: 20 }).catch(() => null),
-        api.intelligence.warnings().catch(() => []),
-        api.chat.listSessions().catch(() => []),
-      ]);
+      const today = format(new Date(), "yyyy-MM-dd");
+      const todayPlan = (await api.scheduler.today().catch(() => null)) as DailyPlan | null;
+      const habitRows =
+        (await api.habits
+          .list({ active_only: true, limit: 100, offset: 0 })
+          .catch(() => [] as Habit[])) as Habit[];
+      const score = (await api.intelligence.lifeScore().catch(() => null)) as LifeScore | null;
+      const scoreHistory =
+        (await api.intelligence.lifeScoreHistory(45).catch(
+          () => [] as LifeScoreHistoryPoint[],
+        )) as LifeScoreHistoryPoint[];
+      const timelineRows =
+        (await api.intelligence.timeline(30).catch(() => [] as TimelineEvent[])) as TimelineEvent[];
+      const energy = (await api.fitness.energyByDate(today).catch(() => null)) as EnergyForecast | null;
+      const review =
+        (await api.briefing.weeklyReview().catch(() => null as WeeklyReview | null)) as
+          WeeklyReview | null;
+      const calendarToday =
+        (await api.calendar.today().catch(() => ({ events: [] } as CalendarTodayResponse))) as
+          CalendarTodayResponse;
 
       setPlan(todayPlan);
-      setHabits(habitList);
-      setReminders(upcoming);
-      setEnergyForecast(energy);
+      setHabits(habitRows);
       setLifeScore(score);
       setLifeScoreHistory(scoreHistory);
-      setBriefing(todayBriefing);
-      setGamificationProfile(profile);
-      setActivityFeedItems(feedPage?.items ?? []);
-      setWarnings(warningRows ?? []);
-      setAgentStatuses(chatSessions.filter(s => s.agent_name === 'os').slice(0, 1) as any);
+      setTimeline(timelineRows);
+      setEnergyForecast(energy);
+      setWeeklyReview(review);
+      setCalendarEvents(calendarToday.events ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load dashboard");
+      setError(err instanceof Error ? err.message : "Unable to load dashboard.");
     } finally {
       setLoading(false);
     }
@@ -128,284 +122,360 @@ export default function DashboardPage() {
     void load();
   }, []);
 
-  const score = Math.round(lifeScore?.score ?? 0);
-  const lifeExplanation =
-    lifeScore?.explanation || briefing?.ai_recommendation_of_day || "Complete your first module check-ins for a stronger score signal.";
-  const todayName = String(user?.full_name || user?.username || "there").split(" ")[0];
+  const score = Math.round(Number(lifeScore?.score || 0));
+  const todayName = String(user?.display_name || user?.full_name || user?.username || "there").split(" ")[0];
 
-  const scheduleRows = (plan?.blocks || []).slice(0, 6);
-  const feedRows = activityFeedItems.slice(0, 10);
+  const lifeScoreTrend = useMemo(() => {
+    const ordered = [...lifeScoreHistory].sort((a, b) => toDate(a.computed_at).getTime() - toDate(b.computed_at).getTime());
+    const latest = ordered[ordered.length - 1]?.score ?? score;
+    const previous = ordered[ordered.length - 2]?.score ?? latest;
+    return {
+      delta: Number((latest - previous).toFixed(1)),
+      chart: ordered.slice(-21).map((point) => ({
+        day: format(toDate(point.computed_at), "MMM d"),
+        score: Number(point.score),
+      })),
+    };
+  }, [lifeScoreHistory, score]);
 
-  const trendValue = useMemo(() => {
-    if (lifeScoreHistory.length < 2) {
-      return 0;
+  const sleepTrend = useMemo(() => {
+    return timeline
+      .filter((event) => event.type === "sleep")
+      .map((event) => ({ day: format(toDate(event.date), "MMM d"), hours: Number(event.value) }))
+      .sort((a, b) => (a.day > b.day ? 1 : -1))
+      .slice(-14);
+  }, [timeline]);
+
+  const energyCurve = useMemo(() => {
+    const hourly = energyForecast?.hourly_scores || {};
+    return Object.entries(hourly)
+      .map(([hour, value]) => ({ hour, score: Number(value) }))
+      .sort((a, b) => a.hour.localeCompare(b.hour));
+  }, [energyForecast]);
+
+  const habitHeatmap = useMemo(() => {
+    const completionMap = new Map<string, number>();
+    for (const event of timeline) {
+      if (event.type === "habits") {
+        completionMap.set(event.date, Number(event.value));
+      }
     }
-    const latest = lifeScoreHistory[0]?.score ?? 0;
-    const previous = lifeScoreHistory[1]?.score ?? 0;
-    return latest - previous;
-  }, [lifeScoreHistory]);
 
-  const summaryStats = useMemo(() => {
-    const habitStreak = habits.reduce((max, item) => Math.max(max, item.current_streak || 0), 0);
-    const sleepScore = lifeScore?.component_scores?.sleep ?? 0;
-    const studySessions = (plan?.blocks || []).filter((item) => item.category === "study").length;
-    const xpWeek = numeric((gamificationProfile?.weekly_momentum as Record<string, unknown> | undefined)?.xp_earned_week, 0);
+    return Array.from({ length: 28 }).map((_, index) => {
+      const day = addDays(new Date(), -(27 - index));
+      const key = format(day, "yyyy-MM-dd");
+      const value = completionMap.get(key) ?? 0;
+      return {
+        key,
+        label: format(day, "MMM d"),
+        value,
+      };
+    });
+  }, [timeline]);
 
-    return [
-      {
-        label: "Habit Streak",
-        value: habitStreak,
-        trend: 3.6,
-        unit: "days",
-        icon: <Target className="h-4 w-4" />,
-      },
-      {
-        label: "Sleep Score",
-        value: Math.round(sleepScore),
-        trend: 1.2,
-        icon: <Moon className="h-4 w-4" />,
-      },
-      {
-        label: "Energy Level",
-        value: numeric((energyForecast as Record<string, unknown> | null)?.score, 72),
-        trend: 2.5,
-        icon: <HeartPulse className="h-4 w-4" />,
-      },
-      {
-        label: "Study Sessions",
-        value: studySessions,
-        trend: 4.8,
-        icon: <BookOpen className="h-4 w-4" />,
-      },
-      {
-        label: "Life Score Trend",
-        value: Math.round(score),
-        trend: trendValue,
-        icon: <Activity className="h-4 w-4" />,
-      },
-      {
-        label: "XP This Week",
-        value: xpWeek,
-        trend: 8.2,
-        icon: <Sparkles className="h-4 w-4" />,
-      },
-    ];
-  }, [energyForecast, gamificationProfile?.weekly_momentum, habits, lifeScore?.component_scores?.sleep, plan?.blocks, score, trendValue]);
+  const calendarRows = useMemo(() => {
+    if (calendarEvents.length > 0) {
+      return calendarEvents.slice(0, 6).map((event) => ({
+        id: event.id,
+        title: event.title,
+        time: `${format(new Date(event.start), "HH:mm")} - ${format(new Date(event.end), "HH:mm")}`,
+        source: event.source,
+      }));
+    }
+
+    return (plan?.blocks || []).slice(0, 6).map((block) => ({
+      id: block.id,
+      title: block.title,
+      time: `${block.start_time.slice(0, 5)} - ${block.end_time.slice(0, 5)}`,
+      source: block.category,
+    }));
+  }, [calendarEvents, plan?.blocks]);
+
+  const activeHabits = habits.filter((habit) => habit.is_active !== false).length;
+  const maxStreak = habits.reduce((max, habit) => Math.max(max, Number(habit.current_streak || 0)), 0);
 
   return (
     <div className="space-y-6">
       {error ? <InsightBanner text={error} type="danger" /> : null}
 
-      <AppCard padding="lg" className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-        <div>
-          <h2 className="page-title">Good morning, {todayName}</h2>
-          <p className="meta-copy mt-2">{format(new Date(), "EEEE, MMMM do yyyy")}</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <ProgressRing value={score} size="lg" label="Life Score" sublabel={lifeExplanation} />
-        </div>
-      </AppCard>
-
-      <AppCard>
-        <p className="section-label">Today&apos;s Priority Actions</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <QuickActionButton
-            icon={<Target className="h-4 w-4" />}
-            label="Check In Habit"
-            shortcut="Cmd K"
-            onClick={() => navigate("/habits")}
-          />
-          <QuickActionButton
-            icon={<Pill className="h-4 w-4" />}
-            label="Log Medicine"
-            shortcut="Cmd K"
-            onClick={() => navigate("/medicine")}
-          />
-          <QuickActionButton
-            icon={<NotebookPen className="h-4 w-4" />}
-            label="Write Journal"
-            shortcut="Cmd K"
-            onClick={() => navigate("/journal")}
-          />
-          <QuickActionButton
-            icon={<Moon className="h-4 w-4" />}
-            label="Log Sleep"
-            shortcut="Cmd K"
-            onClick={() => navigate("/sleep")}
-          />
-          <QuickActionButton
-            icon={<Dumbbell className="h-4 w-4" />}
-            label="Log Workout"
-            shortcut="Cmd K"
-            onClick={() => navigate("/fitness")}
-          />
-        </div>
-      </AppCard>
-
-      <AppCard>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="section-label">Morning Briefing</p>
-            <p className="meta-copy mt-1">{format(new Date(), "PPP")}</p>
-          </div>
-          <button
-            type="button"
-            className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary"
-            onClick={() => setBriefingOpen((prev) => !prev)}
-          >
-            {briefingOpen ? "Collapse" : "Expand"}
-          </button>
-        </div>
-
-        {briefingOpen ? (
-          <div className="mt-4 space-y-3">
-            <InsightBanner
-              type="info"
-              text={briefing?.ai_recommendation_of_day || "No recommendation yet. Start your first check-in to unlock guidance."}
-            />
-            {warnings.slice(0, 5).map((warning) => (
-              <InsightBanner
-                key={warning.id}
-                type={warning.severity === "critical" ? "danger" : warning.severity === "high" ? "warning" : "info"}
-                text={`${warning.warning_type.replace(/_/g, " ")}: ${warning.explanation}`}
-                dismissible
-              />
-            ))}
-            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-              <AppCard padding="sm" className="bg-surface-raised">
-                <p className="section-label">Sleep</p>
-                <p className="meta-copy mt-1">{score > 0 ? `Sleep component score: ${Math.round(lifeScore?.component_scores?.sleep ?? 0)}` : "No sleep summary available"}</p>
-              </AppCard>
-              <AppCard padding="sm" className="bg-surface-raised">
-                <p className="section-label">Schedule</p>
-                <p className="meta-copy mt-1">{scheduleRows.length} blocks today</p>
-              </AppCard>
-              <AppCard padding="sm" className="bg-surface-raised">
-                <p className="section-label">Habits</p>
-                <p className="meta-copy mt-1">{briefing?.priority_habits?.length ?? 0} priority habits</p>
-              </AppCard>
-              <AppCard padding="sm" className="bg-surface-raised">
-                <p className="section-label">Medicines</p>
-                <p className="meta-copy mt-1">{reminders.length} upcoming reminders</p>
-              </AppCard>
-              <AppCard padding="sm" className="bg-surface-raised md:col-span-2 lg:col-span-2">
-                <p className="section-label">Energy Prediction</p>
-                <p className="meta-copy mt-1">
-                  Peak hours: {(briefing?.energy_prediction?.peak_hours || []).join(", ") || "N/A"}
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 xl:grid-cols-3">
+        <motion.div variants={fadeMotion} className="xl:col-span-2">
+          <AppCard className="h-full bg-gradient-to-br from-surface to-surface-raised">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="section-label">Daily Command Center</p>
+                <h2 className="page-title mt-2">Good morning, {todayName}</h2>
+                <p className="body-copy mt-2 max-w-2xl">
+                  Your life score is {score}. Track the trend, stabilize sleep consistency, and defend your focus blocks.
                 </p>
-              </AppCard>
+              </div>
+              <ProgressRing
+                value={score}
+                size="lg"
+                label="Life Score"
+                sublabel={lifeScore?.explanation || "Log across modules to strengthen signal quality."}
+              />
             </div>
-          </div>
-        ) : null}
-      </AppCard>
 
-      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-6 lg:grid-cols-5">
-        <motion.div variants={fadeMotion} className="lg:col-span-3">
-          <AppCard>
-            <p className="section-label">Today&apos;s Schedule</p>
-            <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border bg-surface p-3">
+                <p className="meta-copy">24h Change</p>
+                <p className={`mt-1 text-lg font-semibold ${lifeScoreTrend.delta >= 0 ? "text-success" : "text-danger"}`}>
+                  {lifeScoreTrend.delta >= 0 ? "+" : ""}
+                  {lifeScoreTrend.delta}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface p-3">
+                <p className="meta-copy">Active Habits</p>
+                <p className="mt-1 text-lg font-semibold text-text-primary">{activeHabits}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface p-3">
+                <p className="meta-copy">Longest Streak</p>
+                <p className="mt-1 text-lg font-semibold text-text-primary">{maxStreak}d</p>
+              </div>
+            </div>
+
+            <div className="mt-4 h-44">
               {loading ? (
                 <SkeletonLoader variant="card" />
-              ) : scheduleRows.length === 0 ? (
-                <p className="body-copy">No schedule blocks yet.</p>
               ) : (
-                scheduleRows.map((block) => (
-                  <TimelineCard
-                    key={block.id}
-                    time={`${block.start_time.slice(0, 5)}-${block.end_time.slice(0, 5)}`}
-                    title={block.title}
-                    category={block.category}
-                    status={block.status === "in_progress" ? "active" : block.status === "completed" ? "done" : "pending"}
-                    duration={`${block.estimated_duration_minutes || 0} min`}
-                  />
-                ))
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={lifeScoreTrend.chart}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
+                    <XAxis dataKey="day" tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} />
+                    <YAxis domain={[0, 100]} tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} />
+                    <Tooltip />
+                    <Line dataKey="score" type="monotone" stroke="rgb(var(--color-accent))" strokeWidth={2.6} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
               )}
             </div>
           </AppCard>
         </motion.div>
 
-        <motion.div variants={fadeMotion} className="lg:col-span-2">
-          <AppCard>
-            <p className="section-label">Activity Feed</p>
-            <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full">
+            <div className="flex items-center justify-between">
+              <p className="section-label">Weekly Review</p>
+              {weeklyReview ? <Badge label={weeklyReview.trend} variant={mapTrendVariant(weeklyReview.trend)} /> : null}
+            </div>
+            {loading ? (
+              <div className="mt-4 space-y-3">
+                <SkeletonLoader variant="text" lines={5} />
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <div className="rounded-lg border border-border bg-surface-raised p-3">
+                  <p className="meta-copy">Average Score</p>
+                  <p className="mt-1 text-lg font-semibold text-text-primary">{weeklyReview?.avg_score?.toFixed(1) || "--"}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface-raised p-3">
+                  <p className="meta-copy">Best Day</p>
+                  <p className="mt-1 text-sm font-semibold text-success">{weeklyReview?.best_day || "No data"}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface-raised p-3">
+                  <p className="meta-copy">Worst Day</p>
+                  <p className="mt-1 text-sm font-semibold text-danger">{weeklyReview?.worst_day || "No data"}</p>
+                </div>
+                <p className="rounded-lg border border-accent/25 bg-accent/10 p-3 text-sm text-text-primary">
+                  {weeklyReview?.william_summary || "Weekly review will appear as soon as score history is available."}
+                </p>
+              </div>
+            )}
+          </AppCard>
+        </motion.div>
+      </motion.section>
+
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 xl:grid-cols-3">
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full">
+            <p className="section-label">Sleep Trend</p>
+            <div className="mt-4 h-56">
+              {loading ? (
+                <SkeletonLoader variant="card" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={sleepTrend}>
+                    <defs>
+                      <linearGradient id="sleepFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="rgb(var(--color-info))" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="rgb(var(--color-info))" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
+                    <XAxis dataKey="day" tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="hours" stroke="rgb(var(--color-info))" fill="url(#sleepFill)" strokeWidth={2.2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </AppCard>
+        </motion.div>
+
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full">
+            <p className="section-label">Habit Heatmap</p>
+            <div className="mt-4 grid grid-cols-7 gap-2">
+              {loading
+                ? Array.from({ length: 28 }).map((_, index) => <SkeletonLoader key={index} variant="circle" />)
+                : habitHeatmap.map((cell) => {
+                    const opacity = Math.min(0.95, Math.max(0.08, cell.value / 100));
+                    return (
+                      <div key={cell.key} className="flex flex-col items-center gap-1">
+                        <div
+                          title={`${cell.label}: ${cell.value.toFixed(0)}% completion`}
+                          className="h-8 w-8 rounded-md border border-border"
+                          style={{
+                            backgroundColor: `rgba(16, 185, 129, ${opacity})`,
+                          }}
+                        />
+                        <span className="text-[10px] text-text-muted">{format(toDate(cell.key), "d")}</span>
+                      </div>
+                    );
+                  })}
+            </div>
+            <p className="meta-copy mt-3">Last 28 days of completed habit ratio.</p>
+          </AppCard>
+        </motion.div>
+
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full">
+            <p className="section-label">Energy Curve</p>
+            <div className="mt-4 h-56">
+              {loading ? (
+                <SkeletonLoader variant="card" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={energyCurve}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.15)" />
+                    <XAxis dataKey="hour" tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "rgb(var(--color-text-muted))", fontSize: 11 }} domain={[0, 10]} />
+                    <Tooltip />
+                    <Bar dataKey="score" fill="rgb(var(--color-warning))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </AppCard>
+        </motion.div>
+      </motion.section>
+
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 xl:grid-cols-3">
+        <motion.div variants={fadeMotion} className="xl:col-span-2">
+          <AppCard className="h-full">
+            <div className="flex items-center justify-between">
+              <p className="section-label">Calendar Today</p>
+              <button
+                type="button"
+                onClick={() => navigate("/timeline")}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition hover:text-text-primary"
+              >
+                Open Timeline
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
               {loading ? (
                 <SkeletonLoader variant="text" lines={8} />
-              ) : feedRows.length === 0 ? (
-                <p className="body-copy">No activity yet.</p>
+              ) : calendarRows.length === 0 ? (
+                <p className="body-copy">No calendar or schedule items for today.</p>
               ) : (
-                feedRows.map((item) => (
-                  <div key={item.event_id} className="rounded-lg border border-border bg-surface-raised p-3">
-                    <p className="section-label">{item.module}</p>
-                    <p className="mt-1 text-sm text-text-primary">{item.summary}</p>
-                    <p className="meta-copy mt-1">{item.timestamp}</p>
+                calendarRows.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between rounded-lg border border-border bg-surface-raised p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-text-primary">{item.title}</p>
+                      <p className="meta-copy mt-1">{item.source}</p>
+                    </div>
+                    <div className="inline-flex items-center gap-1 text-xs text-text-secondary">
+                      <Clock3 className="h-3.5 w-3.5" /> {item.time}
+                    </div>
                   </div>
                 ))
               )}
             </div>
           </AppCard>
         </motion.div>
-      </motion.section>
 
-      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="overflow-x-auto">
-        <div className="grid min-w-[1100px] grid-cols-6 gap-3">
-          {loading
-            ? Array.from({ length: 6 }).map((_, idx) => <SkeletonLoader key={idx} variant="stat" />)
-            : summaryStats.map((item) => (
-                <motion.div key={item.label} variants={fadeMotion}>
-                  <StatCard
-                    label={item.label}
-                    value={item.value}
-                    unit={item.unit}
-                    trend={item.trend}
-                    trendLabel="vs last week"
-                    icon={item.icon}
-                  />
-                </motion.div>
-              ))}
-        </div>
-      </motion.section>
-
-      <motion.section variants={staggerContainer} initial="initial" animate="animate">
-        <AppCard className="relative overflow-hidden bg-gradient-to-br from-surface to-surface-raised border-accent/20">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold capitalize text-accent flex items-center gap-2">
-                <Bot className="h-4 w-4" /> OS Agent
-              </p>
-              <p className="mt-1 text-sm text-text-primary">
-                {agentStatuses.length > 0 && typeof (agentStatuses[0] as any).last_message_preview === 'string' 
-                   ? (agentStatuses[0] as any).last_message_preview 
-                   : "I am ready to manage your day. How can I help?"}
-              </p>
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full">
+            <p className="section-label">Quick Actions</p>
+            <div className="mt-4 grid gap-2">
+              <QuickActionButton icon={<Target className="h-4 w-4" />} label="Habits" onClick={() => navigate("/habits")} />
+              <QuickActionButton icon={<Moon className="h-4 w-4" />} label="Sleep" onClick={() => navigate("/sleep")} />
+              <QuickActionButton icon={<HeartPulse className="h-4 w-4" />} label="Fitness" onClick={() => navigate("/fitness")} />
+              <QuickActionButton icon={<CalendarDays className="h-4 w-4" />} label="Timeline" onClick={() => navigate("/timeline")} />
             </div>
-            
+          </AppCard>
+        </motion.div>
+      </motion.section>
+
+      <motion.section variants={staggerContainer} initial="initial" animate="animate" className="grid gap-4 xl:grid-cols-3">
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full">
+            <p className="section-label">Life Score Components</p>
+            <div className="mt-4 space-y-2">
+              {Object.entries(lifeScore?.component_scores || {}).map(([key, value]) => (
+                <div key={key}>
+                  <div className="mb-1 flex items-center justify-between text-xs text-text-secondary">
+                    <span className="capitalize">{key}</span>
+                    <span>{Math.round(Number(value))}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-surface-raised">
+                    <div
+                      className="h-2 rounded-full bg-accent"
+                      style={{ width: `${Math.min(100, Math.max(0, Number(value)))}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </AppCard>
+        </motion.div>
+
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full">
+            <p className="section-label">Momentum Signals</p>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-lg border border-border bg-surface-raised p-3">
+                <p className="inline-flex items-center gap-2 text-sm text-text-primary">
+                  <Flame className="h-4 w-4 text-warning" /> Habit streak stability
+                </p>
+                <p className="meta-copy mt-1">Strong streaks protect your score in low-energy windows.</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface-raised p-3">
+                <p className="inline-flex items-center gap-2 text-sm text-text-primary">
+                  <Zap className="h-4 w-4 text-info" /> Energy pacing
+                </p>
+                <p className="meta-copy mt-1">Place deep work in your top 3 energy hours to reduce score volatility.</p>
+              </div>
+              <div className="rounded-lg border border-border bg-surface-raised p-3">
+                <p className="inline-flex items-center gap-2 text-sm text-text-primary">
+                  <Activity className="h-4 w-4 text-accent" /> Recovery rhythm
+                </p>
+                <p className="meta-copy mt-1">Sleep consistency currently has the highest cross-module impact.</p>
+              </div>
+            </div>
+          </AppCard>
+        </motion.div>
+
+        <motion.div variants={fadeMotion}>
+          <AppCard className="h-full border-accent/30 bg-gradient-to-br from-surface to-surface-raised">
+            <p className="section-label inline-flex items-center gap-2">
+              <Sparkles className="h-4 w-4" /> William Note
+            </p>
+            <p className="mt-4 text-sm text-text-primary">
+              "Keep your bedtime variance tight for the next 7 days. That single constraint can unlock cleaner habit completion and a higher weekly average score."
+            </p>
             <button
-               onClick={() => navigate('/chat')}
-               className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-hover"
+              type="button"
+              onClick={() => navigate("/chat", { state: { prefill: "Give me a 7-day recovery strategy based on my dashboard" } })}
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-hover"
             >
-               Open Chat
+              <LineChart className="h-4 w-4" /> Plan With William
             </button>
-          </div>
-          
-          <div className="mt-4 flex flex-wrap gap-2">
-            {[
-              "How am I doing?",
-              "Reschedule my day",
-              "Log sleep",
-              "Morning briefing"
-            ].map(prompt => (
-               <button
-                 key={prompt}
-                 onClick={() => {
-                   navigate('/chat', { state: { prefill: prompt } });
-                 }}
-                 className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-text-secondary transition hover:border-accent hover:text-accent"
-               >
-                 {prompt}
-               </button>
-            ))}
-          </div>
-        </AppCard>
+          </AppCard>
+        </motion.div>
       </motion.section>
     </div>
   );

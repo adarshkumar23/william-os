@@ -71,3 +71,14 @@ class MorningBriefingSendResult(BaseModel):
     briefing: MorningBriefingResponse
     telegram: NotificationLogResponse
     in_app: NotificationLogResponse
+
+
+class WeeklyReview(BaseModel):
+    week_start: date
+    week_end: date
+    avg_score: float
+    best_day: str
+    worst_day: str
+    trend: str
+    william_summary: str
+    highlights: list[str] = Field(default_factory=list)

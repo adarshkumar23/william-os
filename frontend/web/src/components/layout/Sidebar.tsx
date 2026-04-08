@@ -2,6 +2,7 @@ import clsx from "clsx";
 import {
   BookOpen,
   Brain,
+  CalendarRange,
   HeartPulse,
   LayoutDashboard,
   LineChart,
@@ -29,6 +30,7 @@ const groups: Array<{ label: string; items: NavRow[] }> = [
     label: "Daily",
     items: [
       { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/timeline", label: "Timeline", icon: CalendarRange },
       { to: "/chat", label: "Chat", icon: MessageSquare },
       { to: "/habits", label: "Habits", icon: Target },
       { to: "/journal", label: "Journal", icon: ScrollText },

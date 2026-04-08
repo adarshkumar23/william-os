@@ -24,17 +24,20 @@ from app.modules.briefing.schemas import (
     BriefingScheduleItem,
     MorningBriefingResponse,
     MorningBriefingSendResult,
+    WeeklyReview,
 )
 from app.modules.decisions.models import Decision
 from app.modules.fitness.service import FitnessService
-from app.modules.habits.models import HabitFrequency
+from app.modules.habits.models import Habit, HabitCheckIn, HabitFrequency
 from app.modules.habits.service import HabitsService
+from app.modules.intelligence.models import LifeScore
 from app.modules.intelligence.service import LifeScoreService
 from app.modules.medicine.models import Medicine, MedicineLog
 from app.modules.messaging.models import NotificationLog
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
 from app.modules.scheduler.service import SchedulerService
+from app.modules.sleep.models import SleepRecord
 from app.modules.sleep.service import SleepService
 from app.modules.study.models import MockTest, RevisionCard, Subject
 from app.modules.trading.service import TradingService
@@ -108,6 +111,123 @@ class MorningBriefingService:
             briefing=briefing,
             telegram=telegram_log,
             in_app=in_app_log,
+        )
+
+    async def get_weekly_review(self, user_id: UUID) -> WeeklyReview:
+        week_end = date.today()
+        week_start = week_end - timedelta(days=6)
+        start_dt = datetime.combine(week_start, time.min)
+
+        score_rows_result = await self.db.execute(
+            select(LifeScore)
+            .where(LifeScore.user_id == user_id)
+            .where(LifeScore.computed_at >= start_dt)
+            .order_by(LifeScore.computed_at.asc())
+        )
+        score_rows = score_rows_result.scalars().all()
+
+        by_date: dict[date, list[float]] = {}
+        for row in score_rows:
+            key = row.computed_at.date()
+            by_date.setdefault(key, []).append(float(row.score))
+
+        day_scores = {day: (sum(values) / len(values)) for day, values in by_date.items() if values}
+
+        if not day_scores:
+            day_scores = {week_end: 50.0}
+
+        avg_score = round(sum(day_scores.values()) / len(day_scores), 2)
+        best_date = max(day_scores, key=lambda day: day_scores[day])
+        worst_date = min(day_scores, key=lambda day: day_scores[day])
+        best_score = day_scores[best_date]
+        worst_score = day_scores[worst_date]
+
+        ordered_days = sorted(day_scores)
+        head_values = [day_scores[d] for d in ordered_days[: max(1, len(ordered_days) // 2)]]
+        tail_values = [day_scores[d] for d in ordered_days[max(1, len(ordered_days) // 2) :]]
+        head_avg = sum(head_values) / len(head_values)
+        tail_avg = sum(tail_values) / len(tail_values)
+        delta = tail_avg - head_avg
+        if delta > 2.0:
+            trend = "improving"
+        elif delta < -2.0:
+            trend = "declining"
+        else:
+            trend = "stable"
+
+        habits_count_result = await self.db.execute(
+            select(Habit.id).where(Habit.user_id == user_id).where(Habit.is_active.is_(True))
+        )
+        total_habits = len(habits_count_result.scalars().all())
+        habit_checkins_result = await self.db.execute(
+            select(HabitCheckIn)
+            .join(Habit, Habit.id == HabitCheckIn.habit_id)
+            .where(Habit.user_id == user_id)
+            .where(HabitCheckIn.check_date >= week_start)
+            .where(HabitCheckIn.check_date <= week_end)
+        )
+        by_habit_day: dict[date, int] = {}
+        for row in habit_checkins_result.scalars().all():
+            if row.completed and not row.skipped:
+                by_habit_day[row.check_date] = by_habit_day.get(row.check_date, 0) + 1
+        habit_rates = {
+            d.isoformat(): round((c / total_habits) * 100.0, 2) if total_habits > 0 else 0.0
+            for d, c in by_habit_day.items()
+        }
+
+        sleep_rows_result = await self.db.execute(
+            select(SleepRecord)
+            .where(SleepRecord.user_id == user_id)
+            .where(SleepRecord.sleep_date >= week_start)
+            .where(SleepRecord.sleep_date <= week_end)
+        )
+        sleep_rows = sleep_rows_result.scalars().all()
+        sleep_hours = [float(row.sleep_duration_minutes) / 60.0 for row in sleep_rows]
+        sleep_quality = [float(row.sleep_quality) for row in sleep_rows]
+
+        week_data = {
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "avg_score": avg_score,
+            "best_day": best_date.isoformat(),
+            "best_score": round(best_score, 2),
+            "worst_day": worst_date.isoformat(),
+            "worst_score": round(worst_score, 2),
+            "trend": trend,
+            "habit_completion_rates": habit_rates,
+            "avg_sleep_hours": (
+                round(sum(sleep_hours) / len(sleep_hours), 2) if sleep_hours else 0.0
+            ),
+            "avg_sleep_quality": (
+                round(sum(sleep_quality) / len(sleep_quality), 2) if sleep_quality else 0.0
+            ),
+        }
+
+        william_summary = await self._generate_weekly_summary(week_data)
+        highlights = [
+            f"Average life score {avg_score:.1f}",
+            f"Best day {best_date.strftime('%A')} ({best_score:.0f})",
+            f"Worst day {worst_date.strftime('%A')} ({worst_score:.0f})",
+        ]
+        if sleep_hours:
+            highlights.append(
+                "Average sleep "
+                f"{week_data['avg_sleep_hours']:.1f}h with quality "
+                f"{week_data['avg_sleep_quality']:.1f}/10"
+            )
+        if habit_rates:
+            avg_habit_rate = sum(habit_rates.values()) / len(habit_rates)
+            highlights.append(f"Habit completion average {avg_habit_rate:.0f}%")
+
+        return WeeklyReview(
+            week_start=week_start,
+            week_end=week_end,
+            avg_score=avg_score,
+            best_day=f"{best_date.strftime('%A')} (score {best_score:.0f})",
+            worst_day=f"{worst_date.strftime('%A')} (score {worst_score:.0f})",
+            trend=trend,
+            william_summary=william_summary,
+            highlights=highlights,
         )
 
     async def was_briefing_sent_today(
@@ -356,8 +476,7 @@ class MorningBriefingService:
                     "stability": 50.0,
                 },
                 explanation=(
-                    "Life score unavailable right now; "
-                    "focus on one high-impact task early."
+                    "Life score unavailable right now; focus on one high-impact task early."
                 ),
                 computed_at=datetime.now(UTC).replace(tzinfo=None),
             )
@@ -411,6 +530,73 @@ class MorningBriefingService:
             observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
             logger.warning("briefing_recommendation_failed", error=str(exc))
             return self._fallback_recommendation(context)
+
+    async def _generate_weekly_summary(self, week_data: dict) -> str:
+        api_key = self.settings.gemini_api_key.get_secret_value()
+        if not api_key:
+            return self._fallback_weekly_summary(week_data)
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": (
+                                "Summarize this person's week in 2 sentences "
+                                "with specific numbers.\n"
+                                f"Data: {json.dumps(week_data, default=str)}"
+                            )
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.35,
+                "maxOutputTokens": 140,
+            },
+        }
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.settings.gemini_model}:generateContent"
+        )
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
+
+        started = perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                raw = response.json()
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
+            text = raw["candidates"][0]["content"]["parts"][0]["text"]
+            cleaned = " ".join(str(text).strip().split())
+            return cleaned or self._fallback_weekly_summary(week_data)
+        except Exception as exc:
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
+            logger.warning("weekly_review_summary_failed", error=str(exc))
+            return self._fallback_weekly_summary(week_data)
+
+    @staticmethod
+    def _fallback_weekly_summary(week_data: dict) -> str:
+        trend = str(week_data.get("trend", "stable"))
+        avg = float(week_data.get("avg_score", 0.0))
+        best = str(week_data.get("best_day", "N/A"))
+        worst = str(week_data.get("worst_day", "N/A"))
+        if trend == "improving":
+            direction = "improving"
+        elif trend == "declining":
+            direction = "declining"
+        else:
+            direction = "stable"
+        return (
+            f"Weekly average score was {avg:.1f} with a {direction} trend; "
+            f"best day was {best} and lowest day was {worst}. "
+            "Protect sleep consistency and keep habit completion above baseline next week."
+        )
 
     @staticmethod
     def _fallback_recommendation(context: dict) -> str:

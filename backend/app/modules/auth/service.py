@@ -21,13 +21,11 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     generate_device_fingerprint,
-    hash_token,
     hash_password,
+    hash_token,
     verify_password,
 )
 from app.modules.auth.models import LoginHistory, RefreshTokenBlacklist, User, UserDevice
-from app.modules.messaging.schemas import NotificationPayload
-from app.modules.messaging.service import MessagingService
 from app.modules.auth.schemas import (
     OnboardingCompleteRequest,
     OnboardingStatusResponse,
@@ -36,6 +34,8 @@ from app.modules.auth.schemas import (
     UserProfile,
     UserRegister,
 )
+from app.modules.messaging.schemas import NotificationPayload
+from app.modules.messaging.service import MessagingService
 from app.shared.types import AuthenticationError, NotFoundError, ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -362,8 +362,7 @@ class AuthService:
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
         qr_code_data_url = (
-            "data:image/png;base64,"
-            f"{base64.b64encode(buffer.getvalue()).decode('utf-8')}"
+            f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode('utf-8')}"
         )
 
         await self.db.flush()
@@ -542,10 +541,7 @@ class AuthService:
             service = MessagingService(self.db)
             payload = NotificationPayload(
                 title="Suspicious login detected",
-                body=(
-                    f"Reason: {reason}. IP: {ip or 'unknown'}. "
-                    f"Country: {country or 'unknown'}."
-                ),
+                body=(f"Reason: {reason}. IP: {ip or 'unknown'}. Country: {country or 'unknown'}."),
                 notification_type="security_alert",
                 data={"reason": reason, "ip": ip, "country": country, "user_agent": user_agent},
             )
@@ -587,9 +583,7 @@ class AuthService:
             wake_clock = datetime.strptime(wake_time, "%H:%M").time()
         except ValueError:
             wake_clock = time(hour=6, minute=30)
-        fitness_clock = (
-            datetime.combine(date.today(), wake_clock) + timedelta(hours=1)
-        ).time()
+        fitness_clock = (datetime.combine(date.today(), wake_clock) + timedelta(hours=1)).time()
 
         templates_by_focus: dict[str, HabitCreate] = {
             "habits": HabitCreate(

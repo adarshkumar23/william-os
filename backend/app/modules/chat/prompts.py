@@ -131,6 +131,7 @@ MEMORY INSIGHTS:
 Use the same <action> blocks as the main OS. Focus actions on LOG_MOOD, SET_REMINDER, RESCHEDULE_BLOCK.
 """
 
+
 def get_agent_prompt(agent_name: AgentName) -> str:
     prompts = {
         AgentName.OS: OS_SYSTEM_PROMPT,
@@ -142,11 +143,13 @@ def get_agent_prompt(agent_name: AgentName) -> str:
     }
     return prompts.get(agent_name, OS_SYSTEM_PROMPT)
 
+
 @dataclass
 class ActionItem:
     type: str
     params: dict[str, Any]
     original_text: str
+
 
 @dataclass
 class ActionResult:
