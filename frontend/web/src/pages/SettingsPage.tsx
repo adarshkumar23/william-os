@@ -618,6 +618,35 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+      <section className="card p-4">
+        <h2 className="text-lg font-semibold">Notification Email</h2>
+        <p className="text-sm text-[rgb(var(--text-dim))] mb-3">William will send reminders, briefings and calendar updates to this email.</p>
+        <div className="space-y-3">
+          <input
+            id="notification-email"
+            type="email"
+            placeholder="your-second-email@gmail.com"
+            className="w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg-muted))] px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={async () => {
+              const email = (document.getElementById('notification-email') as HTMLInputElement).value;
+              const token = localStorage.getItem('william_access_token');
+              const res = await fetch('/api/v1/auth/profile/notification-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ notification_email: email })
+              });
+              const data = await res.json();
+              alert(data.ok ? 'Notification email saved! William will send updates to ' + email : 'Failed: ' + JSON.stringify(data));
+            }}
+            style={{display:'block', marginTop:'12px', background:'#3b82f6', color:'white', padding:'10px 20px', borderRadius:'8px', border:'none', cursor:'pointer', fontSize:'14px', fontWeight:'600'}}
+          >
+            💾 Save Notification Email
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

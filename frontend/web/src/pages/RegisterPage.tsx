@@ -51,6 +51,7 @@ export default function RegisterPage() {
         username: username.trim(),
         password,
         full_name: fullName.trim(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata",
       });
       navigate(profile.onboarding_completed ? "/dashboard" : "/onboarding", { replace: true });
     } catch (err) {

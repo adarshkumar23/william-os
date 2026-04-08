@@ -72,3 +72,53 @@ async def send_morning_briefing_email(to: str, name: str, briefing_text: str) ->
     </div>
     """
     return await send_email(to, subject, body_html, briefing_text)
+
+
+async def send_medicine_reminder(to: str, name: str, medicine_name: str, dose: str, time: str) -> bool:
+    subject = f"💊 Medicine Reminder — {medicine_name}"
+    body_html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #e2e8f0; padding: 40px; border-radius: 12px;">
+        <h1 style="color: #3b82f6;">WILLIAM OS</h1>
+        <h2>💊 Medicine Reminder</h2>
+        <p>Hey {name}, time to take your medicine.</p>
+        <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>Medicine:</strong> {medicine_name}</p>
+            <p><strong>Dose:</strong> {dose}</p>
+            <p><strong>Time:</strong> {time}</p>
+        </div>
+        <a href="https://williamos.duckdns.org/medicine" style="display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
+            Log Dose ✅
+        </a>
+    </div>
+    """
+    return await send_email(to, subject, body_html)
+
+
+async def send_daily_calendar(to: str, name: str, events: list, habits: list) -> bool:
+    subject = f"📅 Today's Schedule — William OS"
+    
+    events_html = "".join([
+        f'<li style="padding: 8px 0; border-bottom: 1px solid #334155;">'
+        f'<strong>{e.get("title","")}</strong> at {e.get("start","")}</li>'
+        for e in events
+    ]) or "<li>No events today</li>"
+    
+    habits_html = "".join([
+        f'<li style="padding: 8px 0; border-bottom: 1px solid #334155;">☐ {h}</li>'
+        for h in habits
+    ]) or "<li>No habits due</li>"
+
+    body_html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #e2e8f0; padding: 40px; border-radius: 12px;">
+        <h1 style="color: #3b82f6;">WILLIAM OS</h1>
+        <h2>📅 Good morning {name}</h2>
+        <h3>Today's Calendar</h3>
+        <ul style="list-style: none; padding: 0;">{events_html}</ul>
+        <h3>Habits Due Today</h3>
+        <ul style="list-style: none; padding: 0;">{habits_html}</ul>
+        <a href="https://williamos.duckdns.org/dashboard" style="display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 20px;">
+            Open Dashboard
+        </a>
+    </div>
+    """
+    return await send_email(to, subject, body_html)

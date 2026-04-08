@@ -57,32 +57,17 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 async def get_current_user_id(
     authorization: str = Header(..., description="Bearer <token>"),
-    db: AsyncSession = Depends(get_db),
 ) -> uuid.UUID:
-    """Extract and validate user ID from JWT or permanent API key."""
+    """Extract and validate user ID from JWT."""
     if not authorization.startswith("Bearer "):
         from app.shared.types import AuthenticationError
+
         raise AuthenticationError("Invalid authorization header")
-    token = authorization[7:].strip()
-    if token.startswith("wos-"):
-        from sqlalchemy import text
-        result = await db.execute(
-            text("SELECT user_id FROM auth.api_keys WHERE key_hash=:key AND is_active=true"),
-            {"key": token}
-        )
-        row = result.fetchone()
-        if not row:
-            from app.shared.types import AuthenticationError
-            raise AuthenticationError("Invalid API key")
-        await db.execute(
-            text("UPDATE auth.api_keys SET last_used=NOW() WHERE key_hash=:key"),
-            {"key": token}
-        )
-        await db.commit()
-        return uuid.UUID(str(row[0]))
+    token = authorization[7:]
     payload = decode_token(token)
     if payload.get("type") != "access":
         from app.shared.types import AuthenticationError
+
         raise AuthenticationError("Invalid token type")
     return uuid.UUID(payload["sub"])
 

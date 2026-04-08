@@ -63,6 +63,7 @@ class User(Base):
     permission_scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
 
     # Journal vault passphrase hash (separate from login password)
+    notification_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     journal_passphrase_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
