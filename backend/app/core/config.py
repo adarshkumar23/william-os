@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     schedule_regen_cron: str = "0 0 * * *"
     prewake_offset_minutes: int = 30
 
+    # ── n8n / Webhooks ──────────────────────────────────────────
+    n8n_base_url: str = ""
+    n8n_webhook_secret: SecretStr = Field(default=SecretStr(""))
+    webhook_max_retries: int = 3
+
     # ── Observability ───────────────────────────────────────────
     metrics_enabled: bool = True
     sentry_dsn: SecretStr = Field(default=SecretStr(""))

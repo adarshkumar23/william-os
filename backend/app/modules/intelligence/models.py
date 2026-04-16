@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class ModuleSignal(Base):
+class WilliamCrossSignal(Base):
     __tablename__ = "module_signals"
     __table_args__ = {"schema": "intelligence"}
 
@@ -33,6 +33,10 @@ class ModuleSignal(Base):
         server_default=func.now(),
         index=True,
     )
+
+
+# Backward-compatible alias for existing imports.
+ModuleSignal = WilliamCrossSignal
 
 
 class CrossModuleRule(Base):

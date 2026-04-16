@@ -1,0 +1,61 @@
+{
+  "name": "William - Study and Habits Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {"mode": "everyDay", "hour": 20, "minute": 0}
+          ]
+        }
+      },
+      "id": "Cron_StudyHabit",
+      "name": "Cron Study Habit",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [220, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/study-session'}}",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}]},
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { subject_name: 'Daily Revision', duration_minutes: 45, comprehension_score: 6, topics_covered: ['Auto-logged by n8n'] } }}"
+      },
+      "id": "POST_Study",
+      "name": "POST /integrations/study-session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 160]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/habit-checkin'}}",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}]},
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { habit_name: 'Daily Review', completed: true } }}"
+      },
+      "id": "POST_Habit",
+      "name": "POST /integrations/habit-checkin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 280]
+    }
+  ],
+  "connections": {
+    "Cron Study Habit": {
+      "main": [
+        [{"node": "POST /integrations/study-session", "type": "main", "index": 0}],
+        [{"node": "POST /integrations/habit-checkin", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "pinData": {},
+  "versionId": "1"
+}

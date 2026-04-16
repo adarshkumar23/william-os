@@ -1180,3 +1180,107 @@ def generate_single_schedule(user_id: str, target_date: str):
             await db.commit()
 
     _run_async(_run())
+
+
+@celery_app.task(name="app.worker.deliver_webhook", bind=True, max_retries=3)
+def deliver_webhook(self, delivery_id: str):
+    """Deliver signed webhook payloads with exponential backoff retries."""
+
+    import httpx
+    import structlog
+    from sqlalchemy import select
+
+    logger = structlog.get_logger("worker.webhooks")
+
+    async def _run():
+        from app.core.database import async_session_factory
+        from app.modules.rules.models import WebhookDelivery, WebhookRegistration
+        from app.modules.rules.service import WebhookDispatcher
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(WebhookDelivery)
+                .where(WebhookDelivery.id == uuid.UUID(delivery_id))
+                .limit(1)
+            )
+            delivery = result.scalar_one_or_none()
+            if delivery is None:
+                return {"retry": False, "reason": "delivery_not_found"}
+
+            registration = await db.get(WebhookRegistration, delivery.registration_id)
+            if registration is None or not registration.is_active:
+                delivery.status = "failed"
+                delivery.error_message = "registration_inactive_or_missing"
+                await db.commit()
+                return {"retry": False, "reason": "registration_inactive_or_missing"}
+
+            delivery.attempts = int(delivery.attempts or 0) + 1
+            delivery.last_attempt_at = datetime.now(UTC).replace(tzinfo=None)
+
+            signature = WebhookDispatcher.sign_payload(registration.secret, delivery.payload or {})
+            headers = {
+                "Content-Type": "application/json",
+                "X-William-Signature": signature,
+            }
+
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(
+                        registration.webhook_url,
+                        json=delivery.payload,
+                        headers=headers,
+                    )
+                if not response.is_success:
+                    raise RuntimeError(f"http_{response.status_code}")
+
+                delivery.status = "delivered"
+                delivery.error_message = None
+                delivery.next_retry_at = None
+                registration.last_triggered_at = datetime.now(UTC).replace(tzinfo=None)
+                registration.failure_count = 0
+                await db.commit()
+                logger.info(
+                    "webhook_delivery_success",
+                    delivery_id=delivery_id,
+                    webhook_id=str(registration.id),
+                )
+                return {"retry": False, "reason": "delivered"}
+            except Exception as exc:
+                registration.failure_count = int(registration.failure_count or 0) + 1
+                max_attempts = 3
+                if delivery.attempts >= max_attempts:
+                    delivery.status = "failed"
+                    delivery.error_message = str(exc)
+                    delivery.next_retry_at = None
+                    await db.commit()
+                    logger.warning(
+                        "webhook_delivery_failed_permanent",
+                        delivery_id=delivery_id,
+                        webhook_id=str(registration.id),
+                        error=str(exc),
+                    )
+                    return {"retry": False, "reason": "max_attempts_reached"}
+
+                backoff = [30, 120, 600][delivery.attempts - 1]
+                delivery.status = "pending"
+                delivery.error_message = str(exc)
+                delivery.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=backoff)
+                await db.commit()
+                logger.warning(
+                    "webhook_delivery_retry_scheduled",
+                    delivery_id=delivery_id,
+                    webhook_id=str(registration.id),
+                    attempts=delivery.attempts,
+                    backoff_seconds=backoff,
+                    error=str(exc),
+                )
+                return {"retry": True, "countdown": backoff, "reason": str(exc)}
+
+    import uuid
+
+    try:
+        outcome = _run_async(_run())
+        if isinstance(outcome, dict) and outcome.get("retry"):
+            raise self.retry(countdown=int(outcome.get("countdown") or 30))
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))

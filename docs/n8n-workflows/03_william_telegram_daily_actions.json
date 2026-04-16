@@ -1,0 +1,67 @@
+{
+  "name": "William - Telegram Daily Actions",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "william-telegram",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "id": "Webhook_Telegram",
+      "name": "Telegram Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [220, 260]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const txt = (($json.body || {}).message || {}).text || '';\nconst lower = txt.toLowerCase();\nlet action = 'daily_summary';\nif (lower.includes('/today')) action = 'today_schedule';\nif (lower.includes('/checkin')) action = 'habit_checkin';\nif (lower.includes('/journal')) action = 'quick_journal';\nif (lower.includes('/study')) action = 'study_log';\nreturn [{ json: { action, raw_text: txt } }];"
+      },
+      "id": "Parse_Command",
+      "name": "Parse Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 260]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/telegram/daily'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { action: $json.action } }}"
+      },
+      "id": "POST_TelegramDaily",
+      "name": "POST /integrations/telegram/daily",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, result: $json.data || null } }}"
+      },
+      "id": "Respond_OK",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1020, 260]
+    }
+  ],
+  "connections": {
+    "Telegram Webhook": {"main": [[{"node": "Parse Command", "type": "main", "index": 0}]]},
+    "Parse Command": {"main": [[{"node": "POST /integrations/telegram/daily", "type": "main", "index": 0}]]},
+    "POST /integrations/telegram/daily": {"main": [[{"node": "Respond OK", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {},
+  "pinData": {},
+  "versionId": "1"
+}

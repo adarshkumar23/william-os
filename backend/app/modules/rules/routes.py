@@ -6,7 +6,12 @@ import uuid
 
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
-from app.modules.rules.schemas import RuleCreate, RuleUpdate
+from app.modules.rules.schemas import (
+    RuleCreate,
+    RuleUpdate,
+    RuleWebhookTrigger,
+    WebhookRegistrationCreate,
+)
 from app.modules.rules.service import RulesService
 from app.shared.types import success
 from fastapi import APIRouter, Depends
@@ -78,3 +83,72 @@ async def evaluate_rules_now(
     service = RulesService(db)
     result = await service.evaluate_rules(user_id=user_id)
     return success(result.model_dump(mode="json"))
+
+
+@router.post("/webhook")
+async def evaluate_rules_webhook(
+    payload: RuleWebhookTrigger,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RulesService(db)
+    result = await service.evaluate_webhook_event(
+        user_id=user_id,
+        trigger_module=payload.trigger_module,
+        event_name=payload.event_name,
+        event_data=payload.data,
+    )
+    return success(result.model_dump(mode="json"))
+
+
+@router.post("/webhooks/register", status_code=201)
+async def register_webhook(
+    payload: WebhookRegistrationCreate,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RulesService(db)
+    row = await service.register_webhook(user_id=user_id, payload=payload)
+    return success(row.model_dump(mode="json"))
+
+
+@router.get("/webhooks")
+async def list_webhooks(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RulesService(db)
+    rows = await service.list_webhooks(user_id=user_id)
+    return success([item.model_dump(mode="json") for item in rows])
+
+
+@router.delete("/webhooks/{webhook_id}")
+async def delete_webhook(
+    webhook_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RulesService(db)
+    deleted = await service.delete_webhook(user_id=user_id, webhook_id=webhook_id)
+    return success({"deleted": deleted})
+
+
+@router.get("/webhooks/health")
+async def webhooks_health(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RulesService(db)
+    payload = await service.webhooks_health(user_id=user_id)
+    return success(payload)
+
+
+@router.post("/webhooks/{webhook_id}/test")
+async def test_webhook(
+    webhook_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RulesService(db)
+    payload = await service.test_webhook(user_id=user_id, webhook_id=webhook_id)
+    return success(payload)

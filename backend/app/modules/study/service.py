@@ -5,17 +5,21 @@ Study tracking, spaced repetition, and planning intelligence.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.memory.service import MemoryService
-from app.modules.study.models import MockTest, RevisionCard, StudySession, Subject
+from app.modules.study.models import MockTest, RevisionCard, StudyFocusSession, StudySession, Subject
 from app.modules.study.schemas import (
+    FocusSessionCompleteRequest,
+    FocusSessionResponse,
+    FocusSessionStartRequest,
     MockTestCreate,
     MockTestResponse,
     MockTestUpdate,
@@ -237,7 +241,7 @@ class StudyService:
             elif old_repetitions == 1:
                 new_interval = 6
             else:
-                new_interval = max(1, int(round(old_interval * old_ease)))
+                new_interval = max(1, int(round(old_interval * new_ease)))
 
         today = date.today()
         card.repetitions = new_repetitions
@@ -250,6 +254,91 @@ class StudyService:
         await self.db.refresh(card)
 
         return RevisionCardResponse.model_validate(card)
+
+    async def start_focus_session(
+        self,
+        user_id: uuid.UUID,
+        data: FocusSessionStartRequest,
+    ) -> FocusSessionResponse:
+        if data.subject_id is not None:
+            await self._subject_for_user(user_id=user_id, subject_id=data.subject_id)
+
+        active = await self.get_active_focus_session(user_id=user_id)
+        if active is not None:
+            return active
+
+        row = StudyFocusSession(
+            user_id=user_id,
+            subject_id=data.subject_id,
+            planned_minutes=data.planned_minutes,
+            notes=data.notes,
+            status="active",
+            started_at=datetime.now(UTC),
+        )
+        self.db.add(row)
+        await self.db.flush()
+        await self.db.refresh(row)
+        return FocusSessionResponse.model_validate(row)
+
+    async def get_active_focus_session(self, user_id: uuid.UUID) -> FocusSessionResponse | None:
+        result = await self.db.execute(
+            select(StudyFocusSession)
+            .where(StudyFocusSession.user_id == user_id)
+            .where(StudyFocusSession.status == "active")
+            .order_by(StudyFocusSession.started_at.desc())
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        return FocusSessionResponse.model_validate(row) if row is not None else None
+
+    async def complete_focus_session(
+        self,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        data: FocusSessionCompleteRequest,
+    ) -> FocusSessionResponse:
+        row = await self._focus_for_user(user_id=user_id, session_id=session_id)
+        if row.status != "active":
+            return FocusSessionResponse.model_validate(row)
+
+        ended_at = datetime.now(UTC)
+        elapsed = max(1, int((ended_at - row.started_at).total_seconds() // 60))
+
+        row.ended_at = ended_at
+        row.actual_minutes = data.actual_minutes or elapsed
+        row.distraction_count = data.distraction_count
+        row.focus_score = data.focus_score
+        row.notes = data.notes or row.notes
+        row.status = "completed"
+
+        if data.log_as_study_session and row.subject_id is not None and row.actual_minutes:
+            session = StudySession(
+                user_id=user_id,
+                subject_id=row.subject_id,
+                duration_minutes=max(1, int(row.actual_minutes)),
+                topics_covered=["Focus session"],
+                comprehension_score=float(data.focus_score or 7.0),
+                notes=(row.notes or "Focus session completion"),
+                session_date=date.today(),
+            )
+            self.db.add(session)
+
+        await self.db.flush()
+        await self.db.refresh(row)
+        return FocusSessionResponse.model_validate(row)
+
+    async def cancel_focus_session(
+        self,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+    ) -> FocusSessionResponse:
+        row = await self._focus_for_user(user_id=user_id, session_id=session_id)
+        if row.status == "active":
+            row.status = "cancelled"
+            row.ended_at = datetime.now(UTC)
+            await self.db.flush()
+            await self.db.refresh(row)
+        return FocusSessionResponse.model_validate(row)
 
     async def create_mock_test(self, user_id: uuid.UUID, data: MockTestCreate) -> MockTestResponse:
         if data.subject_id:
@@ -358,6 +447,62 @@ class StudyService:
             )
 
         return progress
+
+    async def get_dashboard(self, user_id: uuid.UUID) -> dict:
+        today = date.today()
+        next_week = today + timedelta(days=7)
+        week_start = today - timedelta(days=6)
+
+        (
+            subjects_count_result,
+            cards_due_today_result,
+            cards_due_next_week_result,
+            study_agg_result,
+            mock_rows_result,
+        ) = await asyncio.gather(
+            self.db.execute(
+                select(func.count(Subject.id)).where(Subject.user_id == user_id)
+            ),
+            self.db.execute(
+                select(func.count(RevisionCard.id))
+                .where(RevisionCard.user_id == user_id)
+                .where(RevisionCard.next_review_date <= today)
+            ),
+            self.db.execute(
+                select(func.count(RevisionCard.id))
+                .where(RevisionCard.user_id == user_id)
+                .where(RevisionCard.next_review_date <= next_week)
+            ),
+            self.db.execute(
+                select(
+                    func.coalesce(func.sum(StudySession.duration_minutes), 0),
+                    func.coalesce(func.avg(StudySession.comprehension_score), 0.0),
+                )
+                .where(StudySession.user_id == user_id)
+                .where(StudySession.session_date >= week_start)
+            ),
+            self.db.execute(
+                select(MockTest.percentage)
+                .where(MockTest.user_id == user_id)
+                .order_by(MockTest.date.desc(), MockTest.created_at.desc())
+                .limit(5)
+            ),
+        )
+
+        total_minutes, avg_comprehension = study_agg_result.one()
+        mock_values = [float(value or 0.0) for value in mock_rows_result.scalars().all()]
+        mock_avg_last_5 = round(sum(mock_values) / len(mock_values), 2) if mock_values else 0.0
+        suggestion = await self.suggest_next_topic(user_id)
+
+        return {
+            "subjects_count": int(subjects_count_result.scalar() or 0),
+            "cards_due_today": int(cards_due_today_result.scalar() or 0),
+            "cards_due_next_7d": int(cards_due_next_week_result.scalar() or 0),
+            "study_minutes_last_7d": int(total_minutes or 0),
+            "avg_comprehension_last_7d": round(float(avg_comprehension or 0.0), 2),
+            "mock_avg_last_5": mock_avg_last_5,
+            "suggestion": suggestion,
+        }
 
     async def generate_study_plan(
         self,
@@ -544,3 +689,18 @@ class StudyService:
         if not mock:
             raise NotFoundError("MockTest", str(mock_id))
         return mock
+
+    async def _focus_for_user(
+        self,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+    ) -> StudyFocusSession:
+        result = await self.db.execute(
+            select(StudyFocusSession).where(
+                and_(StudyFocusSession.id == session_id, StudyFocusSession.user_id == user_id)
+            )
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            raise NotFoundError("StudyFocusSession", str(session_id))
+        return row

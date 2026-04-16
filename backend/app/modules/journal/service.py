@@ -5,33 +5,55 @@ Encrypted journal entry creation, retrieval, listing, deletion, and AI summaries
 
 from __future__ import annotations
 
+import json
+import secrets
 import uuid
 from datetime import date
+from datetime import datetime
+from datetime import timedelta
+from datetime import UTC
 from time import perf_counter
 
 import httpx
+import redis.asyncio as redis
 import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call
-from app.core.security import decrypt_text, encrypt_text
-from app.modules.journal.models import JournalEntry, JournalMood
-from app.modules.journal.schemas import JournalCreate, JournalDecrypted, JournalMetadata
+from app.core.security import decrypt_api_secret, decrypt_text, encrypt_api_secret, encrypt_text
+from app.modules.journal.models import JournalDraft, JournalEntry, JournalMood
+from app.modules.journal.schemas import (
+    JournalCreate,
+    JournalDecrypted,
+    JournalDraftResponse,
+    JournalDraftUpsert,
+    JournalMetadata,
+)
 from app.shared.types import EncryptionError, NotFoundError
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
+_JOURNAL_UNLOCK_TTL_MINUTES = 30
+_journal_unlock_cache: dict[uuid.UUID, tuple[str, datetime, str]] = {}
+
 
 class JournalService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.settings = get_settings()
+        self._redis = redis.from_url(self.settings.redis_url, decode_responses=True)
+        self._unlock_ttl_seconds = _JOURNAL_UNLOCK_TTL_MINUTES * 60
 
     async def create_entry(self, user_id: uuid.UUID, data: JournalCreate) -> JournalMetadata:
         word_count = self._count_words(data.content)
-        encrypted_content = encrypt_text(data.content, data.passphrase)
+        passphrase = await self._resolve_passphrase(
+            user_id=user_id,
+            passphrase=data.passphrase,
+            unlock_token=data.unlock_token,
+        )
+        encrypted_content = encrypt_text(data.content, passphrase)
 
         entry = JournalEntry(
             user_id=user_id,
@@ -69,14 +91,20 @@ class JournalService:
         self,
         user_id: uuid.UUID,
         entry_id: uuid.UUID,
-        passphrase: str,
+        passphrase: str | None,
+        unlock_token: str | None = None,
     ) -> JournalDecrypted:
         entry = await self._get_entry_for_user(user_id=user_id, entry_id=entry_id)
+        resolved_passphrase = await self._resolve_passphrase(
+            user_id=user_id,
+            passphrase=passphrase,
+            unlock_token=unlock_token,
+        )
 
         try:
-            content = decrypt_text(entry.encrypted_content, passphrase)
+            content = decrypt_text(entry.encrypted_content, resolved_passphrase)
             summary = (
-                decrypt_text(entry.encrypted_summary, passphrase)
+                decrypt_text(entry.encrypted_summary, resolved_passphrase)
                 if entry.encrypted_summary is not None
                 else None
             )
@@ -121,22 +149,136 @@ class JournalService:
         self,
         user_id: uuid.UUID,
         entry_id: uuid.UUID,
-        passphrase: str,
+        passphrase: str | None,
+        unlock_token: str | None = None,
     ) -> JournalDecrypted:
         entry = await self._get_entry_for_user(user_id=user_id, entry_id=entry_id)
+        resolved_passphrase = await self._resolve_passphrase(
+            user_id=user_id,
+            passphrase=passphrase,
+            unlock_token=unlock_token,
+        )
 
         try:
-            content = decrypt_text(entry.encrypted_content, passphrase)
+            content = decrypt_text(entry.encrypted_content, resolved_passphrase)
         except Exception as exc:
             raise EncryptionError() from exc
 
         summary = await self._summarize_content(content)
-        entry.encrypted_summary = encrypt_text(summary, passphrase)
+        entry.encrypted_summary = encrypt_text(summary, resolved_passphrase)
         await self.db.flush()
         await self.db.refresh(entry)
 
         metadata = JournalMetadata.model_validate(entry)
         return JournalDecrypted(**metadata.model_dump(), content=content, summary=summary)
+
+    async def unlock(self, user_id: uuid.UUID, passphrase: str) -> tuple[datetime, str]:
+        latest_result = await self.db.execute(
+            select(JournalEntry.encrypted_content)
+            .where(JournalEntry.user_id == user_id)
+            .order_by(JournalEntry.entry_date.desc(), JournalEntry.created_at.desc())
+            .limit(1)
+        )
+        latest_encrypted = latest_result.scalar_one_or_none()
+
+        try:
+            if latest_encrypted is not None:
+                decrypt_text(latest_encrypted, passphrase)
+            else:
+                probe = encrypt_text("unlock-probe", passphrase)
+                decrypt_text(probe, passphrase)
+        except Exception as exc:
+            raise EncryptionError() from exc
+
+        session_token = secrets.token_urlsafe(24)
+        unlock_expires_at = datetime.now(UTC) + timedelta(minutes=_JOURNAL_UNLOCK_TTL_MINUTES)
+        _journal_unlock_cache[user_id] = (passphrase, unlock_expires_at, session_token)
+        await self._cache_unlock_session(
+            user_id=user_id,
+            session_token=session_token,
+            passphrase=passphrase,
+        )
+        return unlock_expires_at, session_token
+
+    async def upsert_draft(
+        self,
+        user_id: uuid.UUID,
+        data: JournalDraftUpsert,
+    ) -> JournalDraftResponse:
+        resolved_passphrase = await self._resolve_passphrase(
+            user_id=user_id,
+            passphrase=data.passphrase,
+            unlock_token=data.unlock_token,
+        )
+        encrypted_content = encrypt_text(data.content or "", resolved_passphrase)
+
+        result = await self.db.execute(
+            select(JournalDraft).where(JournalDraft.user_id == user_id).limit(1)
+        )
+        draft = result.scalar_one_or_none()
+        if draft is None:
+            draft = JournalDraft(
+                user_id=user_id,
+                encrypted_content=encrypted_content,
+                mood=data.mood,
+                tags=data.tags,
+            )
+            self.db.add(draft)
+        else:
+            draft.encrypted_content = encrypted_content
+            draft.mood = data.mood
+            draft.tags = data.tags
+
+        await self.db.flush()
+        await self.db.refresh(draft)
+        return JournalDraftResponse(
+            content=data.content or "",
+            mood=draft.mood,
+            tags=draft.tags or [],
+            updated_at=draft.updated_at,
+        )
+
+    async def get_draft(
+        self,
+        user_id: uuid.UUID,
+        passphrase: str | None,
+        unlock_token: str | None = None,
+    ) -> JournalDraftResponse | None:
+        result = await self.db.execute(
+            select(JournalDraft).where(JournalDraft.user_id == user_id).limit(1)
+        )
+        draft = result.scalar_one_or_none()
+        if draft is None:
+            return None
+
+        resolved_passphrase = await self._resolve_passphrase(
+            user_id=user_id,
+            passphrase=passphrase,
+            unlock_token=unlock_token,
+        )
+        try:
+            content = decrypt_text(draft.encrypted_content, resolved_passphrase)
+        except Exception as exc:
+            raise EncryptionError() from exc
+
+        return JournalDraftResponse(
+            content=content,
+            mood=draft.mood,
+            tags=draft.tags or [],
+            updated_at=draft.updated_at,
+        )
+
+    async def delete_draft(self, user_id: uuid.UUID) -> bool:
+        result = await self.db.execute(
+            select(JournalDraft).where(JournalDraft.user_id == user_id).limit(1)
+        )
+        draft = result.scalar_one_or_none()
+        if draft is None:
+            return False
+
+        await self.db.delete(draft)
+        await self.db.flush()
+        return True
 
     async def _get_entry_for_user(self, user_id: uuid.UUID, entry_id: uuid.UUID) -> JournalEntry:
         result = await self.db.execute(
@@ -151,6 +293,106 @@ class JournalService:
         if not entry:
             raise NotFoundError("JournalEntry", str(entry_id))
         return entry
+
+    async def _resolve_passphrase(
+        self,
+        user_id: uuid.UUID,
+        passphrase: str | None,
+        unlock_token: str | None = None,
+    ) -> str:
+        provided = (passphrase or "").strip()
+        if provided:
+            return provided
+
+        cached = await self._get_cached_passphrase(user_id=user_id, unlock_token=unlock_token)
+        if cached:
+            return cached
+
+        raise EncryptionError("Journal is locked. Provide a passphrase or unlock first.")
+
+    async def _get_cached_passphrase(
+        self,
+        user_id: uuid.UUID,
+        unlock_token: str | None = None,
+    ) -> str | None:
+        requested_token = (unlock_token or "").strip()
+
+        if requested_token:
+            cached = await self._read_unlock_session(user_id=user_id, session_token=requested_token)
+            if cached:
+                return cached
+        else:
+            latest_token = await self._get_latest_unlock_token(user_id=user_id)
+            if latest_token:
+                cached = await self._read_unlock_session(user_id=user_id, session_token=latest_token)
+                if cached:
+                    return cached
+
+        local_cached = _journal_unlock_cache.get(user_id)
+        if not local_cached:
+            return None
+
+        passphrase, expires_at, token = local_cached
+        if expires_at <= datetime.now(UTC):
+            _journal_unlock_cache.pop(user_id, None)
+            return None
+
+        if requested_token and requested_token != token:
+            return None
+        return passphrase
+
+    async def _cache_unlock_session(
+        self,
+        user_id: uuid.UUID,
+        session_token: str,
+        passphrase: str,
+    ) -> None:
+        payload = json.dumps({"passphrase": encrypt_api_secret(passphrase)})
+        try:
+            await self._redis.setex(
+                self._unlock_cache_key(user_id=user_id, session_token=session_token),
+                self._unlock_ttl_seconds,
+                payload,
+            )
+            await self._redis.setex(
+                self._unlock_latest_key(user_id=user_id),
+                self._unlock_ttl_seconds,
+                session_token,
+            )
+        except Exception:
+            return
+
+    async def _read_unlock_session(self, user_id: uuid.UUID, session_token: str) -> str | None:
+        try:
+            raw = await self._redis.get(
+                self._unlock_cache_key(user_id=user_id, session_token=session_token)
+            )
+            if not raw:
+                return None
+            parsed = json.loads(raw)
+            encrypted = parsed.get("passphrase") if isinstance(parsed, dict) else None
+            if not isinstance(encrypted, str) or not encrypted:
+                return None
+            return decrypt_api_secret(encrypted)
+        except Exception:
+            return None
+
+    async def _get_latest_unlock_token(self, user_id: uuid.UUID) -> str | None:
+        try:
+            raw = await self._redis.get(self._unlock_latest_key(user_id=user_id))
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+            return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _unlock_cache_key(user_id: uuid.UUID, session_token: str) -> str:
+        return f"journal:unlock:{user_id}:{session_token}"
+
+    @staticmethod
+    def _unlock_latest_key(user_id: uuid.UUID) -> str:
+        return f"journal:unlock:latest:{user_id}"
 
     async def _summarize_content(self, content: str) -> str:
         api_key = self.settings.openrouter_api_key.get_secret_value()

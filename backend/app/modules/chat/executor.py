@@ -140,13 +140,14 @@ class ActionExecutor:
 
     async def _handle_log_sleep(self, params: dict[str, Any]) -> ActionResult:
         sleep = SleepService(self.db)
+        now_utc_naive = datetime.now(UTC).replace(tzinfo=None)
         # Assuming simple for now
         await sleep.log_sleep(
             user_id=self.user_id,
             data=SleepRecordCreate(
                 sleep_date=date.today(),
-                bedtime=datetime.now(), # Needs proper parsing in full version
-                wake_time=datetime.now(),
+                bedtime=now_utc_naive,  # TODO: parse bedtime/wake_time from action payload.
+                wake_time=now_utc_naive,
                 sleep_quality=7,
                 time_to_fall_asleep_minutes=15,
             )

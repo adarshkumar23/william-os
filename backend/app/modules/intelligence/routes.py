@@ -6,9 +6,11 @@ Cross-module signal and adjustment endpoints.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
+from app.modules.fitness.service import FitnessService
 from app.modules.intelligence.schemas import AskTimelineRequest, CrossModuleRuleCreate
 from app.modules.intelligence.service import IntelligenceService, LifeScoreService
 from app.modules.intelligence.warnings_service import PredictiveWarningService
@@ -17,6 +19,16 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/intelligence", tags=["Cross-Module Intelligence"])
+
+
+@router.post("/signals/collect")
+async def collect_signals(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = IntelligenceService(db)
+    signals = await service.collect_signals(user_id=user_id)
+    return success([item.model_dump(mode="json") for item in signals])
 
 
 @router.get("/signals")
@@ -83,6 +95,23 @@ async def get_life_score_history(
     return success([item.model_dump(mode="json") for item in history])
 
 
+@router.get("/energy-forecast")
+async def get_intelligence_energy_forecast(
+    target_date: date | None = Query(default=None),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = FitnessService(db)
+    resolved_date = target_date or date.today()
+    forecast = await service.get_energy_forecast(user_id=user_id, forecast_date=resolved_date)
+    if forecast is None:
+        forecast = await service.generate_energy_forecast(
+            user_id=user_id,
+            forecast_date=resolved_date,
+        )
+    return success(forecast.model_dump(mode="json"))
+
+
 @router.get("/warnings")
 async def get_predictive_warnings(
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -144,6 +173,42 @@ async def intervene_burnout(
     return success(payload)
 
 
+@router.get("/trends")
+async def get_intelligence_trends(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    payload = await service.get_trends(user_id=user_id)
+    return success(payload)
+
+
+@router.post("/refresh")
+async def refresh_intelligence(
+    scan_warnings: bool = Query(default=False),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = PredictiveWarningService(db)
+    await service.invalidate_cache(user_id=user_id)
+
+    burnout = await service.get_burnout_score(user_id=user_id, force_refresh=True)
+    trends = await service.get_trends(user_id=user_id, force_refresh=True)
+    warnings = (
+        await service.scan_user(user_id=user_id)
+        if scan_warnings
+        else await service.get_active_warnings(user_id=user_id)
+    )
+
+    payload = {
+        "burnout": burnout,
+        "trends": trends,
+        "warnings": [item.model_dump(mode="json") for item in warnings],
+        "scanned": scan_warnings,
+    }
+    return success(payload)
+
+
 @router.get("/timeline")
 async def get_timeline(
     days: int = Query(default=90, ge=7, le=365),
@@ -157,6 +222,17 @@ async def get_timeline(
 
 @router.post("/ask-timeline")
 async def ask_timeline(
+    payload: AskTimelineRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = IntelligenceService(db)
+    response = await service.ask_timeline(user_id=user_id, question=payload.question)
+    return success(response)
+
+
+@router.post("/timeline/ask")
+async def ask_timeline_alias(
     payload: AskTimelineRequest,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),

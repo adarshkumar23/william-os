@@ -80,7 +80,7 @@ class IntelligenceService:
         self.settings = get_settings()
 
     async def collect_signals(self, user_id: uuid.UUID) -> list[ModuleSignalResponse]:
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = datetime.now(UTC)
         collected: list[ModuleSignalResponse] = []
 
         for source_module, signal_type, value in await self._gather_signal_triplets(user_id):
@@ -240,7 +240,7 @@ class IntelligenceService:
             grouped[item.affected_module].append(item)
 
         return AdjustmentsResponse(
-            generated_at=datetime.now(UTC).replace(tzinfo=None),
+            generated_at=datetime.now(UTC),
             count=len(adjustments),
             adjustments=dict(grouped),
         )
@@ -743,7 +743,7 @@ class LifeScoreService:
             score=score,
             component_scores=component_scores,
             explanation=explanation,
-            computed_at=datetime.now(UTC).replace(tzinfo=None),
+            computed_at=datetime.now(UTC),
         )
         self.db.add(life_score)
         await self.db.flush()
@@ -772,9 +772,10 @@ class LifeScoreService:
         if latest:
             age = timedelta.max
             if latest.computed_at:
-                age = datetime.now(UTC).replace(tzinfo=None) - latest.computed_at.replace(
-                    tzinfo=None
-                )
+                computed_at = latest.computed_at
+                if computed_at.tzinfo is None:
+                    computed_at = computed_at.replace(tzinfo=UTC)
+                age = datetime.now(UTC) - computed_at
             if age <= timedelta(minutes=180):
                 return LifeScoreResponse.model_validate(latest)
 
@@ -785,7 +786,7 @@ class LifeScoreService:
         user_id: uuid.UUID,
         days: int = 30,
     ) -> list[LifeScoreHistoryPoint]:
-        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=max(1, days))
+        cutoff = datetime.now(UTC) - timedelta(days=max(1, days))
         result = await self.db.execute(
             select(LifeScore)
             .where(LifeScore.user_id == user_id)

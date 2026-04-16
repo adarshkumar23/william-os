@@ -9,7 +9,7 @@ import { AppCard, Badge, InsightBanner, SkeletonLoader } from "../components/ui"
 import { useAuth } from "../contexts/AuthContext";
 import { fadeInUp, staggerContainer } from "../lib/animations";
 import { api } from "../services/api";
-import { AgentName, ChatMessage, ChatSessionListItem } from "../types/api";
+import { AgentName, ChatMessage, ChatSessionListItem, ChatStreamEvent } from "../types/api";
 
 const AGENT_COLORS: Record<AgentName, string> = {
   os: "bg-accent/20 text-accent border-accent/20",
@@ -115,10 +115,16 @@ export default function ChatPage() {
   };
 
   const deleteSession = async (id: string) => {
+    const session = sessions.find((item) => item.id === id);
+    const label = session?.title?.trim() || "this conversation";
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+      return;
+    }
+
     try {
       await api.chat.deleteSession(id);
-      setSessions(sessions.filter((s) => s.id !== id));
-      if (activeSessionId === id) setActiveSessionId(null);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      setActiveSessionId((prev) => (prev === id ? null : prev));
     } catch {
       setError("Failed to delete session");
     }
@@ -133,6 +139,7 @@ export default function ChatPage() {
 
     // Optimistic UI updates
     const tempId = `temp-${Date.now()}`;
+    const assistantTempId = `assistant-temp-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
       {
@@ -143,21 +150,44 @@ export default function ChatPage() {
         content,
         created_at: new Date().toISOString(),
       },
+      {
+        id: assistantTempId,
+        session_id: activeSessionId,
+        user_id: user?.id || "",
+        role: "assistant",
+        content: "",
+        created_at: new Date().toISOString(),
+      },
     ]);
     setChatLoading(true);
 
     try {
-      const response = (await api.chat.sendMessage(activeSessionId, {
+      await api.chat.streamMessage(activeSessionId, {
         content,
-      })) as { user_message: ChatMessage; assistant_message: ChatMessage };
-      const { user_message, assistant_message } = response;
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? user_message : m)).concat(assistant_message));
+      }, (event: ChatStreamEvent) => {
+        if (event.event === "user_message") {
+          const userMessage = event.data;
+          setMessages((prev) => prev.map((m) => (m.id === tempId ? userMessage : m)));
+          return;
+        }
+
+        if (event.event === "delta") {
+          const partial = event.data.content;
+          setMessages((prev) => prev.map((m) => (m.id === assistantTempId ? { ...m, content: partial } : m)));
+          return;
+        }
+
+        if (event.event === "done") {
+          const assistantMessage = event.data.assistant_message;
+          setMessages((prev) => prev.map((m) => (m.id === assistantTempId ? assistantMessage : m)));
+        }
+      });
 
       // Refresh sessions to get any updated title preview
       api.chat.listSessions().then(setSessions);
     } catch {
       setError("Failed to send message. Please try again.");
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setMessages((prev) => prev.filter((m) => m.id !== tempId && m.id !== assistantTempId));
     } finally {
       setChatLoading(false);
     }
@@ -329,7 +359,7 @@ export default function ChatPage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-text-primary">
-                {sessions.find((s) => s.id === activeSessionId)?.title || "Select a conversaton"}
+                {sessions.find((s) => s.id === activeSessionId)?.title || "Select a conversation"}
               </h2>
               <p className="text-xs text-text-muted capitalize">
                 {sessions.find((s) => s.id === activeSessionId)?.agent_name || "William OS"} Agent
@@ -340,6 +370,15 @@ export default function ChatPage() {
             </div>
             </div>
             <div className="hidden items-center gap-2 md:flex">
+              {activeSessionId ? (
+                <button
+                  type="button"
+                  onClick={() => void deleteSession(activeSessionId)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-secondary hover:text-danger"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+              ) : null}
               {(["morning", "afternoon", "evening"] as const).map((trigger) => (
                 <button
                   key={trigger}
@@ -389,7 +428,7 @@ export default function ChatPage() {
                           <Sparkles className="h-3 w-3" /> Proactive check-in
                         </p>
                       ) : null}
-                      {msg.content}
+                      {!isUser && !msg.content && chatLoading ? "Thinking..." : msg.content}
                       
                       {msg.actions_taken && msg.actions_taken.length > 0 && (
                         <div className="mt-3 space-y-2 border-t border-border pt-3">

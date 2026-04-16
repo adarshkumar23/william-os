@@ -1,16 +1,13 @@
 import uuid
-from datetime import datetime
 
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import apple_service, google_service
-from .models import CachedEvent
+from . import apple_service, google_service, native_service
 
 router = APIRouter(prefix="/api/v1/calendar", tags=["Calendar"])
 
@@ -28,6 +25,21 @@ class AppleConnectRequest(BaseModel):
     app_password: str
 
 
+class NativeEventCreateRequest(BaseModel):
+    title: str
+    start: str
+    end: str
+    description: str | None = ""
+    location: str | None = ""
+
+
+class NativeEventUpdateRequest(BaseModel):
+    title: str | None = None
+    start: str | None = None
+    end: str | None = None
+    description: str | None = None
+    location: str | None = None
+
 # ── Google ──────────────────────────────────────────────────────
 
 
@@ -44,8 +56,8 @@ async def google_callback(
     try:
         await google_service.exchange_code(code, db, state)
         return RedirectResponse(url="https://williamos.duckdns.org/settings?calendar=connected")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/google/events")
@@ -113,8 +125,8 @@ async def apple_connect(
         return await apple_service.connect_apple(
             db, user_id, payload.apple_id, payload.app_password
         )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/apple/events")
@@ -142,6 +154,146 @@ async def apple_disconnect(
     return {"status": "disconnected"}
 
 
+# ── Native ─────────────────────────────────────────────────────
+
+
+@router.get("/native/events")
+async def native_events(
+    days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    events = await native_service.list_events(db=db, user_id=user_id, days=days)
+    return {"events": events, "count": len(events)}
+
+
+@router.post("/native/events")
+async def native_create_event(
+    payload: NativeEventCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    try:
+        created = await native_service.create_event(
+            db=db,
+            user_id=user_id,
+            title=payload.title,
+            start=payload.start,
+            end=payload.end,
+            description=payload.description,
+            location=payload.location,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid event payload: {exc}") from exc
+    return {"event": created, "status": "created"}
+
+
+@router.patch("/native/events/{event_id}")
+async def native_update_event(
+    event_id: str,
+    payload: NativeEventUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    try:
+        updated = await native_service.update_event(
+            db=db,
+            user_id=user_id,
+            event_id=event_id,
+            title=payload.title,
+            start=payload.start,
+            end=payload.end,
+            description=payload.description,
+            location=payload.location,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid event payload: {exc}") from exc
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Native event not found")
+    return {"event": updated, "status": "updated"}
+
+
+@router.delete("/native/events/{event_id}")
+async def native_delete_event(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    deleted = await native_service.delete_event(db=db, user_id=user_id, event_id=event_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Native event not found")
+    return {"status": "deleted", "event_id": event_id}
+
+
+@router.get("/events")
+async def list_events(
+    days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    events = await native_service.list_events(db=db, user_id=user_id, days=days)
+    return {"events": events, "count": len(events)}
+
+
+@router.post("/events")
+async def create_event(
+    payload: NativeEventCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    try:
+        created = await native_service.create_event(
+            db=db,
+            user_id=user_id,
+            title=payload.title,
+            start=payload.start,
+            end=payload.end,
+            description=payload.description,
+            location=payload.location,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid event payload: {exc}") from exc
+    return {"event": created, "status": "created"}
+
+
+@router.patch("/events/{event_id}")
+async def patch_event(
+    event_id: str,
+    payload: NativeEventUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    try:
+        updated = await native_service.update_event(
+            db=db,
+            user_id=user_id,
+            event_id=event_id,
+            title=payload.title,
+            start=payload.start,
+            end=payload.end,
+            description=payload.description,
+            location=payload.location,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid event payload: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"event": updated, "status": "updated"}
+
+
+@router.delete("/events/{event_id}")
+async def remove_event(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    deleted = await native_service.delete_event(db=db, user_id=user_id, event_id=event_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"status": "deleted", "event_id": event_id}
+
+
 # ── Unified ─────────────────────────────────────────────────────
 
 
@@ -149,28 +301,8 @@ async def apple_disconnect(
 async def today_events(
     db: AsyncSession = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)
 ):
-    today = datetime.utcnow().date()
-    result = await db.execute(
-        select(CachedEvent)
-        .where(CachedEvent.user_id == str(user_id))
-        .where(CachedEvent.start_time >= datetime.combine(today, datetime.min.time()))
-        .where(CachedEvent.start_time < datetime.combine(today, datetime.max.time()))
-        .order_by(CachedEvent.start_time.asc())
-    )
-    events = result.scalars().all()
-    return {
-        "events": [
-            {
-                "id": e.id,
-                "title": e.title,
-                "start": str(e.start_time),
-                "end": str(e.end_time),
-                "source": e.source,
-                "location": e.location,
-            }
-            for e in events
-        ]
-    }
+    native = await native_service.list_today_events(db=db, user_id=user_id)
+    return {"events": native}
 
 
 @router.get("/upcoming")
@@ -181,7 +313,9 @@ async def upcoming_events(
 ):
     g = await google_service.fetch_events(db, user_id, days)
     a = await apple_service.fetch_events(db, user_id, days)
-    all_events = sorted(g + a, key=lambda x: x.get("start", ""))
+    native_events = await native_service.list_events(db=db, user_id=user_id, days=days)
+
+    all_events = sorted(g + a + native_events, key=lambda x: x.get("start", ""))
     return {"events": all_events, "count": len(all_events)}
 
 

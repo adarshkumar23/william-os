@@ -11,11 +11,12 @@ from datetime import date
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.study.schemas import (
+    FocusSessionCompleteRequest,
+    FocusSessionStartRequest,
     MockTestCreate,
     MockTestUpdate,
     ReviewResult,
     RevisionCardCreate,
-    RevisionCardUpdate,
     StudyPlanRequest,
     StudySessionCreate,
     StudySessionUpdate,
@@ -148,6 +149,54 @@ async def delete_session(
     return success({"deleted": True})
 
 
+@router.post("/focus/start", status_code=201)
+async def start_focus_session(
+    data: FocusSessionStartRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = StudyService(db)
+    session = await service.start_focus_session(user_id=user_id, data=data)
+    return success(session.model_dump(mode="json"))
+
+
+@router.get("/focus/active")
+async def active_focus_session(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = StudyService(db)
+    session = await service.get_active_focus_session(user_id=user_id)
+    return success(session.model_dump(mode="json") if session else None)
+
+
+@router.post("/focus/{session_id}/complete")
+async def complete_focus_session(
+    session_id: uuid.UUID,
+    data: FocusSessionCompleteRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = StudyService(db)
+    session = await service.complete_focus_session(
+        user_id=user_id,
+        session_id=session_id,
+        data=data,
+    )
+    return success(session.model_dump(mode="json"))
+
+
+@router.post("/focus/{session_id}/cancel")
+async def cancel_focus_session(
+    session_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = StudyService(db)
+    session = await service.cancel_focus_session(user_id=user_id, session_id=session_id)
+    return success(session.model_dump(mode="json"))
+
+
 @router.post("/cards", status_code=201)
 async def create_card(
     data: RevisionCardCreate,
@@ -180,11 +229,12 @@ async def list_cards(
 @router.get("/cards/due")
 async def cards_due(
     for_date: date | None = Query(default=None),
+    on_date: date | None = Query(default=None),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     service = StudyService(db)
-    resolved_date = for_date or date.today()
+    resolved_date = for_date or on_date or date.today()
     cards = await service.get_cards_due(user_id=user_id, on_date=resolved_date)
     return success([item.model_dump(mode="json") for item in cards])
 
@@ -197,6 +247,18 @@ async def get_card(
 ) -> dict:
     service = StudyService(db)
     card = await service.get_card(user_id=user_id, card_id=card_id)
+    return success(card.model_dump(mode="json"))
+
+
+@router.post("/cards/{card_id}/review")
+async def review_card(
+    card_id: uuid.UUID,
+    data: ReviewResult,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = StudyService(db)
+    card = await service.review_card(user_id=user_id, card_id=card_id, quality=data.quality)
     return success(card.model_dump(mode="json"))
 
 
@@ -271,6 +333,16 @@ async def get_progress(
     service = StudyService(db)
     progress = await service.get_progress(user_id=user_id)
     return success([item.model_dump(mode="json") for item in progress])
+
+
+@router.get("/dashboard")
+async def get_dashboard(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = StudyService(db)
+    dashboard = await service.get_dashboard(user_id=user_id)
+    return success(dashboard)
 
 
 @router.post("/plan")

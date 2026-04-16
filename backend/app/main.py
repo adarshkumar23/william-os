@@ -182,6 +182,7 @@ def register_routes(app: FastAPI) -> None:
     from app.modules.gamification.routes import router as gamification_router
     from app.modules.habits.routes import router as habits_router
     from app.modules.intelligence.routes import router as intelligence_router
+    from app.modules.integrations.routes import router as integrations_router
     from app.modules.journal.routes import router as journal_router
     from app.modules.memory.routes import router as memory_router
     from app.modules.medicine.routes import router as medicine_router
@@ -212,6 +213,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(email_router, prefix=prefix)
     app.include_router(messaging_router, prefix=prefix)
     app.include_router(secrets_router, prefix=prefix)
+    app.include_router(integrations_router, prefix=prefix)
     app.include_router(rules_router, prefix=prefix)
     app.include_router(voice_router, prefix=prefix)
     app.include_router(study_router, prefix=prefix)

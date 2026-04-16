@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ async def connect_apple(db: AsyncSession, user_id, apple_id: str, app_password: 
         )
         client.principal().calendars()
     except Exception as e:
-        raise Exception(f"Could not connect to iCloud: {e!s}")
+        raise Exception(f"Could not connect to iCloud: {e!s}") from e
     result = await db.execute(
         select(AppleCredential).where(AppleCredential.user_id == str(user_id))
     )
@@ -44,7 +44,7 @@ async def fetch_events(db: AsyncSession, user_id, days: int = 7) -> list[dict]:
             username=cred.apple_id_encrypted,
             password=cred.app_password_encrypted,
         )
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         end = now + timedelta(days=days)
         events = []
         for calendar in client.principal().calendars():
@@ -56,9 +56,9 @@ async def fetch_events(db: AsyncSession, user_id, days: int = 7) -> list[dict]:
                     end_t = comp.dtend.value if hasattr(comp, "dtend") else None
                     uid = str(comp.uid.value) if hasattr(comp, "uid") else ""
                     if isinstance(start, datetime) and start.tzinfo:
-                        start = start.replace(tzinfo=None)
+                        start = start.astimezone(UTC).replace(tzinfo=None)
                     if isinstance(end_t, datetime) and end_t.tzinfo:
-                        end_t = end_t.replace(tzinfo=None)
+                        end_t = end_t.astimezone(UTC).replace(tzinfo=None)
                     events.append(
                         {
                             "id": uid,

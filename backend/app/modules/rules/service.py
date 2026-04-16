@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import secrets
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
+import httpx
 import structlog
 from app.modules.fitness.models import WorkoutLog
 from app.modules.gamification.service import GamificationService
@@ -12,7 +17,12 @@ from app.modules.habits.models import Habit
 from app.modules.journal.models import JournalEntry, JournalMood
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
-from app.modules.rules.models import RuleExecutionLog, UserRule
+from app.modules.rules.models import (
+    RuleExecutionLog,
+    UserRule,
+    WebhookDelivery,
+    WebhookRegistration,
+)
 from app.modules.rules.schemas import (
     RuleCreate,
     RuleEvaluateResponse,
@@ -20,6 +30,8 @@ from app.modules.rules.schemas import (
     RuleResponse,
     RuleTemplate,
     RuleUpdate,
+    WebhookRegistrationCreate,
+    WebhookRegistrationResponse,
 )
 from app.modules.scheduler.schemas import RescheduleRequest
 from app.modules.scheduler.service import SchedulerService
@@ -95,11 +107,140 @@ PREBUILT_RULE_TEMPLATES: list[RuleTemplate] = [
 ]
 
 
+class WebhookDispatcher:
+    MAX_ATTEMPTS = 3
+    BACKOFF_SECONDS = [30, 120, 600]
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def dispatch_event(self, user_id: uuid.UUID, event_type: str, payload: dict) -> int:
+        result = await self.db.execute(
+            select(WebhookRegistration)
+            .where(WebhookRegistration.user_id == user_id)
+            .where(WebhookRegistration.event_type == event_type)
+            .where(WebhookRegistration.is_active.is_(True))
+        )
+        registrations = list(result.scalars().all())
+
+        queued = 0
+        for registration in registrations:
+            delivery = WebhookDelivery(
+                registration_id=registration.id,
+                payload=payload,
+                status="pending",
+            )
+            self.db.add(delivery)
+            await self.db.flush()
+
+            from app.worker import celery_app
+
+            celery_app.send_task(
+                "app.worker.deliver_webhook",
+                kwargs={"delivery_id": str(delivery.id)},
+            )
+            queued += 1
+
+        return queued
+
+    @staticmethod
+    def sign_payload(secret: str, payload: dict) -> str:
+        body = json.dumps(payload, sort_keys=True).encode()
+        return hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
 class RulesService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.messaging = MessagingService(db)
         self.scheduler = SchedulerService(db)
+
+    async def register_webhook(
+        self,
+        user_id: uuid.UUID,
+        payload: WebhookRegistrationCreate,
+    ) -> WebhookRegistrationResponse:
+        row = WebhookRegistration(
+            user_id=user_id,
+            event_type=payload.event_type.strip(),
+            webhook_url=payload.webhook_url.strip(),
+            secret=(payload.secret or secrets.token_hex(32))[:64],
+            is_active=True,
+            failure_count=0,
+        )
+        self.db.add(row)
+        await self.db.flush()
+        await self.db.refresh(row)
+        return WebhookRegistrationResponse.model_validate(row)
+
+    async def list_webhooks(self, user_id: uuid.UUID) -> list[WebhookRegistrationResponse]:
+        result = await self.db.execute(
+            select(WebhookRegistration)
+            .where(WebhookRegistration.user_id == user_id)
+            .order_by(desc(WebhookRegistration.created_at))
+        )
+        rows = result.scalars().all()
+        return [WebhookRegistrationResponse.model_validate(row) for row in rows]
+
+    async def delete_webhook(self, user_id: uuid.UUID, webhook_id: uuid.UUID) -> bool:
+        result = await self.db.execute(
+            select(WebhookRegistration)
+            .where(WebhookRegistration.user_id == user_id)
+            .where(WebhookRegistration.id == webhook_id)
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        row.is_active = False
+        await self.db.flush()
+        return True
+
+    async def webhooks_health(self, user_id: uuid.UUID) -> dict:
+        reg_result = await self.db.execute(
+            select(func.count(WebhookRegistration.id))
+            .where(WebhookRegistration.user_id == user_id)
+            .where(WebhookRegistration.is_active.is_(True))
+        )
+        active = int(reg_result.scalar() or 0)
+
+        delivery_result = await self.db.execute(
+            select(func.count(WebhookDelivery.id))
+            .join(WebhookRegistration, WebhookRegistration.id == WebhookDelivery.registration_id)
+            .where(WebhookRegistration.user_id == user_id)
+            .where(WebhookDelivery.status == "failed")
+        )
+        failed = int(delivery_result.scalar() or 0)
+        return {
+            "active_registrations": active,
+            "failed_deliveries": failed,
+            "healthy": active == 0 or failed == 0,
+        }
+
+    async def test_webhook(self, user_id: uuid.UUID, webhook_id: uuid.UUID) -> dict:
+        result = await self.db.execute(
+            select(WebhookRegistration)
+            .where(WebhookRegistration.user_id == user_id)
+            .where(WebhookRegistration.id == webhook_id)
+            .where(WebhookRegistration.is_active.is_(True))
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("WebhookRegistration", str(webhook_id))
+
+        dispatcher = WebhookDispatcher(self.db)
+        queued = await dispatcher.dispatch_event(
+            user_id=user_id,
+            event_type=row.event_type,
+            payload={
+                "event_type": row.event_type,
+                "test": True,
+                "webhook_id": str(row.id),
+                "sent_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+            },
+        )
+        return {"queued": queued, "event_type": row.event_type}
 
     async def list_templates(self) -> list[RuleTemplate]:
         return PREBUILT_RULE_TEMPLATES
@@ -196,10 +337,129 @@ class RulesService:
             logs=logs,
         )
 
+    async def evaluate_webhook_event(
+        self,
+        user_id: uuid.UUID,
+        trigger_module: str,
+        event_name: str | None,
+        event_data: dict,
+    ) -> RuleEvaluateResponse:
+        context = await self._build_context(user_id=user_id)
+        context["webhook"] = {
+            "trigger_module": trigger_module,
+            "event_name": event_name,
+            "data": event_data,
+        }
+        if isinstance(event_data, dict):
+            context.update(event_data)
+
+        result = await self.db.execute(
+            select(UserRule)
+            .where(UserRule.user_id == user_id)
+            .where(UserRule.is_active.is_(True))
+            .where(func.lower(UserRule.trigger_module) == trigger_module.strip().lower())
+            .order_by(UserRule.created_at.asc())
+        )
+        rules = result.scalars().all()
+
+        logs: list[RuleExecutionLogResponse] = []
+        matched_count = 0
+        executed_count = 0
+
+        for rule in rules:
+            matched = self._matches_condition(rule.trigger_condition or {}, context)
+            action_success = False
+            action_result: dict = {}
+            error: str | None = None
+
+            if matched:
+                matched_count += 1
+                try:
+                    action_result = await self.execute_action(rule=rule, context=context)
+                    action_success = True
+                    executed_count += 1
+                    rule.last_triggered = datetime.now(UTC).replace(tzinfo=None)
+                except Exception as exc:
+                    logger.warning(
+                        "rule_webhook_execution_failed",
+                        user_id=str(user_id),
+                        rule_id=str(rule.id),
+                        error=str(exc),
+                    )
+                    error = str(exc)
+
+            log_row = RuleExecutionLog(
+                user_id=user_id,
+                rule_id=rule.id,
+                matched=matched,
+                action_success=action_success,
+                context_snapshot=context,
+                action_result=action_result,
+                error=error,
+                executed_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+            self.db.add(log_row)
+            await self.db.flush()
+            await self.db.refresh(log_row)
+            logs.append(RuleExecutionLogResponse.model_validate(log_row))
+
+        return RuleEvaluateResponse(
+            evaluated=len(rules),
+            matched=matched_count,
+            executed=executed_count,
+            logs=logs,
+        )
+
     async def execute_action(self, rule: UserRule, context: dict) -> dict:
         action_module = rule.action_module.lower().strip()
         action_type = rule.action_type.lower().strip()
         action_params = rule.action_params or {}
+
+        if action_module == "webhook":
+            url = str(action_params.get("url") or "").strip()
+            if not url:
+                return {
+                    "skipped": True,
+                    "reason": "Missing action_params.url for webhook action",
+                }
+
+            method = str(action_params.get("method") or "POST").upper()
+            if method not in {"POST", "PUT", "PATCH"}:
+                method = "POST"
+
+            timeout_seconds = float(action_params.get("timeout_seconds") or 10.0)
+            headers = {"Content-Type": "application/json"}
+            extra_headers = action_params.get("headers")
+            if isinstance(extra_headers, dict):
+                headers.update({str(k): str(v) for k, v in extra_headers.items()})
+
+            outbound_payload: dict = {
+                "rule_id": str(rule.id),
+                "rule_name": rule.name,
+                "trigger_module": rule.trigger_module,
+                "event": context.get("webhook", {}),
+                "context": context,
+                "triggered_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+            }
+            static_payload = action_params.get("payload")
+            if isinstance(static_payload, dict):
+                outbound_payload["payload"] = static_payload
+
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.request(
+                    method,
+                    url,
+                    json=outbound_payload,
+                    headers=headers,
+                )
+
+            return {
+                "webhook_url": url,
+                "method": method,
+                "status_code": response.status_code,
+                "ok": bool(response.is_success),
+                "response_body": response.text[:500],
+            }
 
         if action_module == "scheduler" and action_type == "reduce_workload":
             reduction = float(action_params.get("reduction_percent") or 30)

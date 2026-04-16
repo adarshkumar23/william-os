@@ -1,7 +1,5 @@
+from datetime import UTC, date as date_type, datetime, timedelta
 import os
-from datetime import datetime, timedelta
-from datetime import date as date_type
-from datetime import time as time_type
 import uuid
 
 import requests
@@ -24,6 +22,14 @@ REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 SCOPES = "https://www.googleapis.com/auth/calendar"
 AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _utcnow_naive() -> datetime:
+    return _utcnow().replace(tzinfo=None)
 
 
 def get_auth_url(user_id) -> str:
@@ -60,7 +66,7 @@ async def exchange_code(code: str, db: AsyncSession, user_id) -> dict:
         db.add(token)
     token.access_token = data.get("access_token")
     token.refresh_token = data.get("refresh_token")
-    token.token_expiry = datetime.utcnow() + timedelta(seconds=data.get("expires_in", 3600))
+    token.token_expiry = _utcnow_naive() + timedelta(seconds=data.get("expires_in", 3600))
     await db.commit()
     return {"status": "connected"}
 
@@ -70,7 +76,7 @@ async def _get_access_token(db: AsyncSession, user_id) -> str | None:
     token = result.scalar_one_or_none()
     if not token or not token.access_token:
         return None
-    if token.token_expiry and datetime.utcnow() > token.token_expiry:
+    if token.token_expiry and _utcnow_naive() > token.token_expiry:
         if not token.refresh_token:
             return None
         resp = requests.post(
@@ -85,7 +91,7 @@ async def _get_access_token(db: AsyncSession, user_id) -> str | None:
         data = resp.json()
         if "access_token" in data:
             token.access_token = data["access_token"]
-            token.token_expiry = datetime.utcnow() + timedelta(seconds=data.get("expires_in", 3600))
+            token.token_expiry = _utcnow_naive() + timedelta(seconds=data.get("expires_in", 3600))
             await db.commit()
     return token.access_token
 
@@ -95,14 +101,14 @@ async def fetch_events(db: AsyncSession, user_id, days: int = 7) -> list[dict]:
         access_token = await _get_access_token(db, user_id)
         if not access_token:
             return []
-        now = datetime.utcnow()
+        now = _utcnow()
         end = now + timedelta(days=days)
         resp = requests.get(
             "https://www.googleapis.com/calendar/v3/calendars/primary/events",
             headers={"Authorization": f"Bearer {access_token}"},
             params={
-                "timeMin": now.isoformat() + "Z",
-                "timeMax": end.isoformat() + "Z",
+                "timeMin": now.isoformat().replace("+00:00", "Z"),
+                "timeMax": end.isoformat().replace("+00:00", "Z"),
                 "maxResults": 50,
                 "singleEvents": True,
                 "orderBy": "startTime",
@@ -206,7 +212,7 @@ async def sync_to_william_schedule(db: AsyncSession, user_id) -> dict:
     event_map = {str(item.get("id")): item for item in events if item.get("id")}
     event_ids = set(event_map.keys())
 
-    today = datetime.utcnow().date()
+    today = _utcnow().date()
     horizon = today + timedelta(days=7)
     existing_result = await db.execute(
         select(ScheduleBlock, DailyPlan)
@@ -296,7 +302,7 @@ async def sync_to_william_schedule(db: AsyncSession, user_id) -> dict:
 
 
 async def push_william_to_google(db: AsyncSession, user_id) -> dict:
-    today = datetime.utcnow().date()
+    today = _utcnow().date()
     plan_result = await db.execute(
         select(DailyPlan)
         .where(DailyPlan.user_id == user_id)
@@ -346,7 +352,7 @@ async def push_william_to_google(db: AsyncSession, user_id) -> dict:
 
 async def detect_conflicts(db: AsyncSession, user_id) -> list[dict]:
     events = await fetch_events(db, user_id, days=1)
-    today = datetime.utcnow().date()
+    today = _utcnow().date()
 
     plan_result = await db.execute(
         select(DailyPlan)
@@ -410,21 +416,21 @@ def _extract_google_event_id(notes: str | None) -> str | None:
 
 def _parse_google_datetime(value: str) -> datetime:
     if not value:
-        return datetime.utcnow()
+        return _utcnow_naive()
     value = str(value)
     if value.endswith("Z"):
         value = value[:-1] + "+00:00"
     try:
         parsed = datetime.fromisoformat(value)
         if parsed.tzinfo is not None:
-            return parsed.astimezone().replace(tzinfo=None)
+            return parsed.astimezone(UTC).replace(tzinfo=None)
         return parsed
     except Exception:
         try:
             parsed_date = datetime.strptime(value, "%Y-%m-%d")
             return parsed_date
         except Exception:
-            return datetime.utcnow()
+            return _utcnow_naive()
 
 
 def _event_bounds(event: dict) -> tuple[datetime, datetime] | None:
@@ -437,7 +443,11 @@ def _event_bounds(event: dict) -> tuple[datetime, datetime] | None:
     return start, end
 
 
-async def _get_or_create_plan(db: AsyncSession, user_id: uuid.UUID, plan_date: date_type) -> DailyPlan:
+async def _get_or_create_plan(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    plan_date: date_type,
+) -> DailyPlan:
     result = await db.execute(
         select(DailyPlan)
         .where(DailyPlan.user_id == user_id)

@@ -5,11 +5,15 @@ Handles standard messaging, calling Gemini, parsing actions, and retrieving cont
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 import json
 import re
 from datetime import UTC, date, datetime
 from time import perf_counter
+from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
@@ -94,7 +98,56 @@ class ChatService:
     async def send_message(
         self, session_id: UUID, user_id: UUID, content: str
     ) -> tuple[ChatMessage, ChatMessage]:
-        # Log user message
+        user_msg, _session, history, system_prompt = await self._prepare_turn(
+            session_id=session_id,
+            user_id=user_id,
+            content=content,
+        )
+        assistant_content = await self._call_gemini(system_prompt, history, content)
+        assistant_msg = await self._finalize_assistant_message(
+            session_id=session_id,
+            user_id=user_id,
+            assistant_content=assistant_content,
+        )
+        return user_msg, assistant_msg
+
+    async def stream_message(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        content: str,
+    ) -> AsyncIterator[dict[str, Any]]:
+        user_msg, _session, history, system_prompt = await self._prepare_turn(
+            session_id=session_id,
+            user_id=user_id,
+            content=content,
+        )
+        yield {"event": "user_message", "payload": user_msg}
+
+        assistant_content = ""
+        async for delta in self._call_gemini_stream(system_prompt, history, content):
+            assistant_content += delta
+            yield {
+                "event": "delta",
+                "payload": {
+                    "delta": delta,
+                    "content": assistant_content,
+                },
+            }
+
+        assistant_msg = await self._finalize_assistant_message(
+            session_id=session_id,
+            user_id=user_id,
+            assistant_content=assistant_content,
+        )
+        yield {"event": "done", "payload": assistant_msg}
+
+    async def _prepare_turn(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        content: str,
+    ) -> tuple[ChatMessage, ChatSession, list[ChatMessage], str]:
         user_msg = ChatMessage(
             session_id=session_id,
             user_id=user_id,
@@ -105,38 +158,41 @@ class ChatService:
         await self.db.flush()
         await self.db.refresh(user_msg)
 
-        # Load session & history
         session = await self.db.get(ChatSession, session_id)
         if not session or session.user_id != user_id:
             raise ValueError("Session not found")
+
+        if (session.title or "").strip().lower() in {"", "new chat", "untitled"}:
+            session.title = self._derive_session_title(content)
 
         session.updated_at = datetime.now(UTC)
         await self.db.flush()
 
         history = await self.get_messages(session_id, user_id, limit=30)
-
-        # Determine and fetch context based on agent
         context = await self._gather_context(user_id, session.agent_name)
 
-        # If session has > 30 messages, summarize older ones
         all_msgs = await self.get_messages(session_id, user_id, limit=100)
         if len(all_msgs) > 30:
             older_msgs = all_msgs[:-30]
             summary = await self._summarize_conversation(older_msgs)
-            # Inject summary into context
             context["conversation_summary"] = f"Earlier in this conversation: {summary}"
-            history = all_msgs[-30:]  # Use only recent 30
+            history = all_msgs[-30:]
 
         system_prompt = get_agent_prompt(session.agent_name).format(**context)
+        return user_msg, session, history, system_prompt
 
-        # Call Gemini
-        assistant_content = await self._call_gemini(system_prompt, history, content)
+    async def _finalize_assistant_message(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        assistant_content: str,
+    ) -> ChatMessage:
+        normalized_content = (assistant_content or "").strip()
+        actions_taken: list[dict[str, Any]] = []
 
-        # Parse and execute actions
-        actions = ActionParser.parse_actions(assistant_content)
-        display_text = ActionParser.strip_actions(assistant_content)
+        actions = ActionParser.parse_actions(normalized_content)
+        display_text = ActionParser.strip_actions(normalized_content)
 
-        actions_taken = []
         if actions:
             executor = ActionExecutor(self.db, user_id)
             for act in actions:
@@ -151,9 +207,7 @@ class ChatService:
                     }
                 )
 
-        # Parse and execute JSON calendar actions:
-        # <action>{"type": "calendar_create", ...}</action>
-        for payload in ACTION_TAG_PATTERN.findall(assistant_content):
+        for payload in ACTION_TAG_PATTERN.findall(normalized_content):
             try:
                 action_json = json.loads(payload)
             except Exception:
@@ -177,15 +231,12 @@ class ChatService:
                 }
             )
 
-        # Remove JSON action tags from visible response text.
         display_text = ACTION_TAG_PATTERN.sub("", display_text).strip()
-
-        # Prepare final assistant message
-        if not display_text.strip():
+        if not display_text:
             display_text = "I have completed those tasks for you."
 
         if actions_taken:
-            confirmations = [a["message"] for a in actions_taken if a["success"]]
+            confirmations = [a["message"] for a in actions_taken if a.get("success")]
             if confirmations:
                 display_text += "\n\n" + "\n".join(confirmations)
 
@@ -199,13 +250,18 @@ class ChatService:
         self.db.add(assistant_msg)
         await self.db.flush()
         await self.db.refresh(assistant_msg)
-
-        return user_msg, assistant_msg
+        return assistant_msg
 
     async def _gather_context(self, user_id: UUID, agent_name: AgentName) -> dict:
         auth_service = AuthService(self.db)
         profile = await auth_service.get_profile(user_id)
-        now = datetime.now()
+        timezone_name = profile.timezone or "UTC"
+        now_utc = datetime.now(UTC)
+        try:
+            now_local = now_utc.astimezone(ZoneInfo(timezone_name))
+        except Exception:
+            timezone_name = "UTC"
+            now_local = now_utc
 
         memory_service = MemoryService(self.db)
         memory_insights = await memory_service.get_relevant_memory_context(user_id)
@@ -213,8 +269,8 @@ class ChatService:
         # Defaults for OS Agent (injects everything)
         context = {
             "name": profile.full_name or profile.username,
-            "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
-            "timezone": profile.timezone or "UTC",
+            "datetime": now_local.strftime("%Y-%m-%d %H:%M:%S"),
+            "timezone": timezone_name,
             "memory_insights": memory_insights,
             "life_score": 0,
             "schedule_summary": "None",
@@ -250,21 +306,58 @@ class ChatService:
 
             if agent_name in [AgentName.OS, AgentName.HEALTH, AgentName.RECOVERY]:
                 sleep = SleepService(self.db)
-                stats = await sleep.get_sleep_stats(user_id)
+                fitness = FitnessService(self.db)
+
+                (
+                    stats,
+                    en,
+                    sleep_rows_result,
+                    journal_result,
+                    workout_result,
+                    burnout_result,
+                ) = await asyncio.gather(
+                    sleep.get_sleep_stats(user_id),
+                    fitness.get_energy_forecast(user_id, date.today()),
+                    self.db.execute(
+                        select(SleepRecord.sleep_duration_minutes)
+                        .where(SleepRecord.user_id == user_id)
+                        .order_by(desc(SleepRecord.sleep_date), desc(SleepRecord.created_at))
+                        .limit(6)
+                    ),
+                    self.db.execute(
+                        select(JournalEntry.mood, JournalEntry.word_count, JournalEntry.entry_date)
+                        .where(JournalEntry.user_id == user_id)
+                        .order_by(desc(JournalEntry.entry_date), desc(JournalEntry.created_at))
+                        .limit(1)
+                    ),
+                    self.db.execute(
+                        select(
+                            WorkoutLog.workout_type,
+                            WorkoutLog.duration_minutes,
+                            WorkoutLog.workout_date,
+                        )
+                        .where(WorkoutLog.user_id == user_id)
+                        .order_by(desc(WorkoutLog.workout_date), desc(WorkoutLog.created_at))
+                        .limit(1)
+                    ),
+                    self.db.execute(
+                        select(PredictiveWarning.details)
+                        .where(PredictiveWarning.user_id == user_id)
+                        .where(PredictiveWarning.warning_type == "burnout_risk")
+                        .where(PredictiveWarning.is_active.is_(True))
+                        .order_by(
+                            desc(PredictiveWarning.detected_at),
+                            desc(PredictiveWarning.created_at),
+                        )
+                        .limit(1)
+                    ),
+                )
+
                 context["sleep_hours"] = stats.avg_duration / 60
                 context["sleep_quality"] = stats.avg_quality_30d
-
-                fitness = FitnessService(self.db)
-                en = await fitness.get_energy_forecast(user_id, date.today())
                 if en and en.hourly_scores:
                     context["energy"] = next(iter(en.hourly_scores.values()), 50)
 
-                sleep_rows_result = await self.db.execute(
-                    select(SleepRecord.sleep_duration_minutes)
-                    .where(SleepRecord.user_id == user_id)
-                    .order_by(desc(SleepRecord.sleep_date), desc(SleepRecord.created_at))
-                    .limit(6)
-                )
                 recent_sleep_rows = [
                     float(v or 0.0) / 60.0 for v in sleep_rows_result.scalars().all()
                 ]
@@ -278,12 +371,6 @@ class ChatService:
                     else:
                         context["sleep_trend"] = "stable"
 
-                journal_result = await self.db.execute(
-                    select(JournalEntry.mood, JournalEntry.word_count, JournalEntry.entry_date)
-                    .where(JournalEntry.user_id == user_id)
-                    .order_by(desc(JournalEntry.entry_date), desc(JournalEntry.created_at))
-                    .limit(1)
-                )
                 latest_journal = journal_result.first()
                 if latest_journal:
                     mood, word_count, entry_date = latest_journal
@@ -293,16 +380,6 @@ class ChatService:
                         f"{entry_date.isoformat()} mood={mood_value} words={int(word_count or 0)}"
                     )
 
-                workout_result = await self.db.execute(
-                    select(
-                        WorkoutLog.workout_type,
-                        WorkoutLog.duration_minutes,
-                        WorkoutLog.workout_date,
-                    )
-                    .where(WorkoutLog.user_id == user_id)
-                    .order_by(desc(WorkoutLog.workout_date), desc(WorkoutLog.created_at))
-                    .limit(1)
-                )
                 latest_workout = workout_result.first()
                 if latest_workout:
                     workout_type, duration_minutes, workout_date = latest_workout
@@ -310,17 +387,6 @@ class ChatService:
                         f"{workout_type} {int(duration_minutes)}m on {workout_date.isoformat()}"
                     )
 
-                burnout_result = await self.db.execute(
-                    select(PredictiveWarning.details)
-                    .where(PredictiveWarning.user_id == user_id)
-                    .where(PredictiveWarning.warning_type == "burnout_risk")
-                    .where(PredictiveWarning.is_active.is_(True))
-                    .order_by(
-                        desc(PredictiveWarning.detected_at),
-                        desc(PredictiveWarning.created_at),
-                    )
-                    .limit(1)
-                )
                 burnout_details = burnout_result.scalar_one_or_none() or {}
                 if isinstance(burnout_details, dict):
                     context["burnout_score"] = int(float(burnout_details.get("score", 0) or 0))
@@ -332,7 +398,7 @@ class ChatService:
 
             if agent_name in [AgentName.OS, AgentName.STUDY]:
                 study = StudyService(self.db)
-                cards = await study.get_due_cards(user_id, date.today())
+                cards = await study.get_cards_due(user_id, date.today())
                 context["cards_due"] = len(cards)
                 context["study_data"] = f"Cards due: {len(cards)}"
 
@@ -387,39 +453,10 @@ class ChatService:
     async def _call_gemini(
         self, system_prompt: str, history: list[ChatMessage], new_content: str
     ) -> str:
+        payload = self._build_gemini_payload(system_prompt, history, new_content)
         api_key = self.settings.gemini_api_key.get_secret_value()
         if not api_key:
             return "William Salvator is running in limited mode. AI functionality is not available."
-
-        messages = [{"role": "system", "parts": [{"text": system_prompt}]}]
-        for msg in history:
-            # Skip storing empty contents if we only had actions
-            if not msg.content.strip() and not msg.actions_taken:
-                continue
-            r = "user" if msg.role == MessageRole.USER else "model"
-            messages.append({"role": r, "parts": [{"text": msg.content}]})
-
-        messages.append({"role": "user", "parts": [{"text": new_content}]})
-
-        payload = {
-            "systemInstruction": {"role": "system", "parts": [{"text": system_prompt}]},
-            "contents": [m for m in messages if m["role"] != "system"],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 2048,
-                "topP": 0.95,
-                "topK": 40,
-            },
-            "safetySettings": [
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {
-                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
-                },
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            ],
-        }
 
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -448,3 +485,136 @@ class ChatService:
             observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
             logger.error("chat_gemini_call_failed", error=str(exc))
             return "I am having trouble connecting to my neural core right now."
+
+    @staticmethod
+    def _derive_session_title(content: str) -> str:
+        cleaned = re.sub(r"\s+", " ", (content or "").strip())
+        if not cleaned:
+            return "New Chat"
+
+        words = cleaned.split(" ")
+        title = " ".join(words[:8]).strip()
+        if len(words) > 8:
+            title = f"{title}..."
+        return title[:200] or "New Chat"
+
+    async def _call_gemini_stream(
+        self,
+        system_prompt: str,
+        history: list[ChatMessage],
+        new_content: str,
+    ) -> AsyncIterator[str]:
+        payload = self._build_gemini_payload(system_prompt, history, new_content)
+        api_key = self.settings.gemini_api_key.get_secret_value()
+        if not api_key:
+            yield "William Salvator is running in limited mode. AI functionality is not available."
+            return
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.settings.gemini_model}:streamGenerateContent?alt=sse"
+        )
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
+
+        started = perf_counter()
+        emitted_text = ""
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client, client.stream(
+                "POST",
+                url,
+                headers=headers,
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    stripped = (line or "").strip()
+                    if not stripped or stripped.startswith(":"):
+                        continue
+                    if not stripped.startswith("data:"):
+                        continue
+
+                    event_data = stripped[5:].strip()
+                    if not event_data or event_data == "[DONE]":
+                        continue
+
+                    try:
+                        raw = json.loads(event_data)
+                    except Exception:
+                        continue
+
+                    chunk_text = self._extract_gemini_chunk_text(raw)
+                    if not chunk_text:
+                        continue
+
+                    if chunk_text.startswith(emitted_text):
+                        delta = chunk_text[len(emitted_text):]
+                        emitted_text = chunk_text
+                    else:
+                        delta = chunk_text
+                        emitted_text += delta
+
+                    if delta:
+                        yield delta
+
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
+        except Exception as exc:
+            observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
+            logger.error("chat_gemini_stream_failed", error=str(exc))
+            if not emitted_text:
+                yield "I am having trouble connecting to my neural core right now."
+
+    def _build_gemini_payload(
+        self,
+        system_prompt: str,
+        history: list[ChatMessage],
+        new_content: str,
+    ) -> dict[str, Any]:
+        messages = [{"role": "system", "parts": [{"text": system_prompt}]}]
+        for msg in history:
+            if not msg.content.strip() and not msg.actions_taken:
+                continue
+            role = "user" if msg.role == MessageRole.USER else "model"
+            messages.append({"role": role, "parts": [{"text": msg.content}]})
+
+        messages.append({"role": "user", "parts": [{"text": new_content}]})
+
+        return {
+            "systemInstruction": {"role": "system", "parts": [{"text": system_prompt}]},
+            "contents": [m for m in messages if m["role"] != "system"],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 2048,
+                "topP": 0.95,
+                "topK": 40,
+            },
+            "safetySettings": [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                },
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ],
+        }
+
+    @staticmethod
+    def _extract_gemini_chunk_text(raw: dict[str, Any]) -> str:
+        candidates = raw.get("candidates") or []
+        if not candidates:
+            return ""
+
+        first_candidate = candidates[0] if isinstance(candidates[0], dict) else {}
+        content = first_candidate.get("content") if isinstance(first_candidate, dict) else {}
+        parts = content.get("parts") if isinstance(content, dict) else []
+        if not isinstance(parts, list):
+            return ""
+
+        text = ""
+        for part in parts:
+            if isinstance(part, dict) and part.get("text"):
+                text += str(part.get("text"))
+        return text

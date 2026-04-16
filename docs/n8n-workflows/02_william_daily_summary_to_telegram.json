@@ -1,0 +1,68 @@
+{
+  "name": "William - Daily Summary to Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {"mode": "everyDay", "hour": 6, "minute": 30}
+          ]
+        }
+      },
+      "id": "Cron_Daily",
+      "name": "Cron Daily",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [220, 260]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/daily-summary'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}
+          ]
+        }
+      },
+      "id": "GET_DailySummary",
+      "name": "GET /integrations/daily-summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [460, 260]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $json.data || {};\nconst life = data.life_score || {};\nconst warnings = data.warnings || {};\nconst sleep = data.sleep || {};\nreturn [{ json: { text: `William Daily Summary\\nLife Score: ${life.score ?? 'n/a'}\\nSleep Quality: ${sleep.avg_quality_30d ?? 'n/a'}\\nWarnings: ${warnings.count ?? 0}` } }];"
+      },
+      "id": "Format_Text",
+      "name": "Format Telegram Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 260]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage'}}",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { chat_id: $env.TELEGRAM_CHAT_ID, text: $json.text } }}"
+      },
+      "id": "Telegram_Send",
+      "name": "Telegram Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 260]
+    }
+  ],
+  "connections": {
+    "Cron Daily": {"main": [[{"node": "GET /integrations/daily-summary", "type": "main", "index": 0}]]},
+    "GET /integrations/daily-summary": {"main": [[{"node": "Format Telegram Text", "type": "main", "index": 0}]]},
+    "Format Telegram Text": {"main": [[{"node": "Telegram Send", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {},
+  "pinData": {},
+  "versionId": "1"
+}

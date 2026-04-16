@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import structlog
-from app.modules.calendar import google_service
+from app.modules.calendar import native_service
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,10 +51,6 @@ async def execute_calendar_action(
 ) -> str:
     action_type = str(action_json.get("type") or "").strip().lower()
 
-    connected = await google_service.is_connected(db, user_id)
-    if not connected:
-        return "Google Calendar is not connected. Please connect it in Settings."
-
     try:
         if action_type == "calendar_create":
             title = str(action_json.get("title") or "Untitled Event").strip()
@@ -66,9 +62,9 @@ async def execute_calendar_action(
             if end_dt <= start_dt:
                 return "Could not create event: end time must be after start time."
 
-            await google_service.create_event(
-                db,
-                user_id,
+            await native_service.create_event(
+                db=db,
+                user_id=user_id,
                 title=title,
                 start=start_dt.isoformat(),
                 end=end_dt.isoformat(),
@@ -80,7 +76,7 @@ async def execute_calendar_action(
         if action_type == "calendar_list":
             days = int(action_json.get("days") or 7)
             days = max(1, min(30, days))
-            events = await google_service.fetch_events(db, user_id, days=days)
+            events = await native_service.list_events(db=db, user_id=user_id, days=days)
             if not events:
                 return "No upcoming calendar events found."
 
@@ -101,7 +97,9 @@ async def execute_calendar_action(
             if not event_id:
                 return "Could not remove event: missing event_id."
 
-            await google_service.delete_event(db, user_id, event_id=event_id)
+            deleted = await native_service.delete_event(db=db, user_id=user_id, event_id=event_id)
+            if not deleted:
+                return "Could not remove event: event was not found."
             return "Removed event ✅"
 
         return "That calendar action is not supported yet."

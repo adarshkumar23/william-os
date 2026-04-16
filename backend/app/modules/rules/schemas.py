@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -73,3 +74,28 @@ class RuleTemplate(BaseModel):
     action_module: str
     action_type: str
     action_params: dict
+
+
+class RuleWebhookTrigger(BaseModel):
+    trigger_module: str = Field(min_length=1, max_length=50)
+    event_name: str | None = Field(default=None, min_length=1, max_length=120)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class WebhookRegistrationCreate(BaseModel):
+    event_type: str = Field(min_length=1, max_length=100)
+    webhook_url: str = Field(min_length=8, max_length=1000)
+    secret: str | None = Field(default=None, min_length=16, max_length=64)
+
+
+class WebhookRegistrationResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    event_type: str
+    webhook_url: str
+    is_active: bool
+    last_triggered_at: datetime | None
+    failure_count: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

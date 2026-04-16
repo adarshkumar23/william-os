@@ -9,19 +9,19 @@ import { JournalEntryDecrypted, JournalEntryMeta } from "../types/api";
 import { AppCard, EmptyState, SectionHeader, SkeletonLoader } from "../components/ui";
 
 const moodScore: Record<string, number> = {
-  happy: 9,
-  calm: 7,
-  focused: 8,
-  anxious: 4,
-  sad: 3,
+  great: 9,
+  good: 7,
+  okay: 6,
+  low: 4,
+  bad: 3,
 };
 
 const moodIcon: Record<string, string> = {
-  happy: "☀️",
-  calm: "🌤",
-  focused: "⛅",
-  anxious: "🌧",
-  sad: "🌧",
+  great: "☀️",
+  good: "🌤",
+  okay: "⛅",
+  low: "🌧",
+  bad: "⛈️",
 };
 
 export default function JournalPage() {
@@ -33,12 +33,17 @@ export default function JournalPage() {
   const [tags, setTags] = useState("");
   const [selected, setSelected] = useState<JournalEntryDecrypted | null>(null);
   const [readPassphrase, setReadPassphrase] = useState("");
+  const [unlockPassphrase, setUnlockPassphrase] = useState("");
+  const [unlockExpiresAt, setUnlockExpiresAt] = useState<string | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [draftSaving, setDraftSaving] = useState(false);
   const [error, setError] = useState("");
 
   const shouldReduceMotion = useReducedMotion();
   const fadeMotion = reduceMotion(shouldReduceMotion, fadeInUp);
+  const isJournalUnlocked = Boolean(unlockExpiresAt && new Date(unlockExpiresAt) > new Date());
 
   const load = async () => {
     setLoading(true);
@@ -47,16 +52,74 @@ export default function JournalPage() {
     setLoading(false);
   };
 
+  const hydrateServerDraft = async (passphraseOverride?: string) => {
+    try {
+      const draft = await api.journal.getDraft(passphraseOverride);
+      if (!draft) {
+        return;
+      }
+      setContent(draft.content || "");
+      setMood(String(draft.mood || ""));
+      setTags((draft.tags || []).join(", "));
+      setDraftSavedAt(draft.updated_at);
+    } catch {
+      // Draft may be encrypted and vault locked. Ignore until unlocked/passphrase is provided.
+    }
+  };
+
   useEffect(() => {
     void load();
+    void hydrateServerDraft();
   }, []);
+
+  useEffect(() => {
+    if (tab !== "write") {
+      return;
+    }
+    if (!isJournalUnlocked && !passphrase.trim()) {
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      if (!content.trim() && !mood && !tags.trim()) {
+        try {
+          await api.journal.clearDraft();
+          setDraftSavedAt(null);
+        } catch {
+          // no-op
+        }
+        return;
+      }
+
+      setDraftSaving(true);
+      try {
+        const payload = {
+          content,
+          passphrase: passphrase || undefined,
+          mood: mood || undefined,
+          tags: tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        };
+        const saved = await api.journal.saveDraft(payload);
+        setDraftSavedAt(saved.updated_at);
+      } catch {
+        // Keep typing uninterrupted if autosave fails.
+      } finally {
+        setDraftSaving(false);
+      }
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [tab, content, mood, tags, passphrase, isJournalUnlocked]);
 
   const onSave = async () => {
     setError("");
     try {
       await api.journal.create({
         content,
-        passphrase,
+        passphrase: passphrase || undefined,
         mood: mood || undefined,
         tags: tags
           .split(",")
@@ -67,6 +130,8 @@ export default function JournalPage() {
       setPassphrase("");
       setMood("");
       setTags("");
+      await api.journal.clearDraft();
+      setDraftSavedAt(null);
       setTab("read");
       await load();
     } catch (err) {
@@ -74,10 +139,23 @@ export default function JournalPage() {
     }
   };
 
+  const onUnlock = async () => {
+    setError("");
+    try {
+      const response = await api.journal.unlock(unlockPassphrase);
+      setUnlockExpiresAt(response.unlock_expires_at);
+      setPassphrase("");
+      setReadPassphrase("");
+      await hydrateServerDraft();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to unlock journal");
+    }
+  };
+
   const onDecrypt = async (entryId: string) => {
     setError("");
     try {
-      const entry = await api.journal.read(entryId, readPassphrase);
+      const entry = await api.journal.read(entryId, readPassphrase || undefined);
       setSelected(entry);
       setActiveEntryId(entryId);
     } catch (err) {
@@ -88,7 +166,7 @@ export default function JournalPage() {
   const onGenerateSummary = async (entryId: string) => {
     setError("");
     try {
-      const entry = await api.journal.summary(entryId, readPassphrase);
+      const entry = await api.journal.summary(entryId, readPassphrase || undefined);
       setSelected(entry);
       setActiveEntryId(entryId);
       await load();
@@ -163,6 +241,31 @@ export default function JournalPage() {
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
             <LockKeyhole className="h-4 w-4" /> AES-256-GCM encrypted
           </div>
+          <div className="mb-3 grid gap-3 rounded-lg border border-border bg-surface-raised p-3 md:grid-cols-[1fr_auto]">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Vault Unlock</p>
+              <input
+                type="password"
+                value={unlockPassphrase}
+                onChange={(event) => setUnlockPassphrase(event.target.value)}
+                placeholder="Unlock passphrase"
+                className="w-full rounded-input border border-border bg-surface px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-text-muted">
+                {isJournalUnlocked
+                  ? `Unlocked until ${new Date(unlockExpiresAt as string).toLocaleTimeString()}`
+                  : "Unlock once to save/read without repeating passphrase for this session."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void onUnlock()}
+              disabled={!unlockPassphrase.trim()}
+              className="h-fit self-end rounded-button border border-border px-3 py-2 text-xs font-semibold text-text-primary disabled:opacity-50"
+            >
+              Unlock
+            </button>
+          </div>
           <textarea
             value={content}
             onChange={(event) => setContent(event.target.value)}
@@ -192,14 +295,17 @@ export default function JournalPage() {
               type="password"
               value={passphrase}
               onChange={(event) => setPassphrase(event.target.value)}
-              placeholder="Passphrase"
+              placeholder="Passphrase (optional if unlocked)"
               className="rounded-input border border-border bg-surface-raised px-3 py-2 text-sm"
             />
           </div>
+          {draftSaving ? <p className="mt-2 text-xs text-text-muted">Saving draft...</p> : null}
+          {draftSavedAt ? <p className="mt-2 text-xs text-text-muted">Draft saved at {new Date(draftSavedAt).toLocaleTimeString()}</p> : null}
           {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
           <button
             type="button"
             onClick={() => void onSave()}
+            disabled={!content.trim() || (!passphrase.trim() && !isJournalUnlocked)}
             className="mt-4 rounded-button bg-accent px-4 py-2 text-sm font-semibold text-white"
           >
             Save Entry
@@ -266,11 +372,16 @@ export default function JournalPage() {
 
           <AppCard>
             <p className="section-label">Decrypt Entry</p>
+            <p className="mt-2 text-xs text-text-muted">
+              {isJournalUnlocked
+                ? `Vault unlocked until ${new Date(unlockExpiresAt as string).toLocaleTimeString()}. Passphrase optional.`
+                : "Provide passphrase or unlock vault from Write tab."}
+            </p>
             <input
               type="password"
               value={readPassphrase}
               onChange={(event) => setReadPassphrase(event.target.value)}
-              placeholder="Passphrase"
+              placeholder="Passphrase (optional if unlocked)"
               className="mt-3 w-full rounded-input border border-border bg-surface-raised px-3 py-2 text-sm"
             />
             <button

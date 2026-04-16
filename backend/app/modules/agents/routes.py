@@ -47,3 +47,13 @@ async def trigger_agent(
     service = OrchestratorAgentService(db)
     result = await service.trigger_agent(user_id=user_id, agent_name=name)
     return success(result)
+
+
+@router.post("/run-all")
+async def run_all_agents(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = OrchestratorAgentService(db)
+    result = await service.run_for_user(user_id=user_id)
+    return success(result)

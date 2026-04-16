@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
+import redis.asyncio as redis
 import structlog
+from app.core.config import get_settings
 from app.modules.auth.models import User
 from app.modules.decisions.models import Decision
 from app.modules.habits.models import Habit, HabitCheckIn
-from app.modules.intelligence.models import ModuleSignal, PredictiveWarning
-from app.modules.intelligence.models import LifeScore
+from app.modules.intelligence.models import LifeScore, PredictiveWarning
 from app.modules.intelligence.schemas import PredictiveWarningResponse
 from app.modules.journal.models import JournalEntry, JournalMood
 from app.modules.medicine.models import Medicine, MedicineLog
@@ -41,6 +43,9 @@ class PredictiveWarningService:
         self.db = db
         self.messaging = MessagingService(db)
         self.scheduler = SchedulerService(db)
+        settings = get_settings()
+        self._cache_ttl_seconds = max(60, int(settings.redis_cache_ttl))
+        self._redis = redis.from_url(settings.redis_url, decode_responses=True)
 
     async def resolve_warning(
         self,
@@ -65,7 +70,17 @@ class PredictiveWarningService:
         await self.db.refresh(row)
         return PredictiveWarningResponse.model_validate(row)
 
-    async def get_burnout_score(self, user_id: uuid.UUID) -> dict[str, object]:
+    async def get_burnout_score(
+        self,
+        user_id: uuid.UUID,
+        force_refresh: bool = False,
+    ) -> dict[str, object]:
+        cache_key = f"intelligence:burnout-score:{user_id}"
+        if not force_refresh:
+            cached = await self._cache_get_json(cache_key)
+            if isinstance(cached, dict):
+                return cached
+
         score, signals = await self._calculate_burnout_score(user_id)
         severity = self._burnout_severity(score)
         if score < 30:
@@ -77,12 +92,86 @@ class PredictiveWarningService:
         else:
             recommendation = "Immediate recovery mode: cut workload, rest, and replan tomorrow."
 
-        return {
+        payload = {
             "score": round(score, 2),
             "severity": severity,
             "signals": signals,
             "recommendation": recommendation,
         }
+        await self._cache_set_json(cache_key, payload)
+        return payload
+
+    async def get_trends(
+        self,
+        user_id: uuid.UUID,
+        force_refresh: bool = False,
+    ) -> dict[str, object]:
+        cache_key = f"intelligence:trends:{user_id}"
+        if not force_refresh:
+            cached = await self._cache_get_json(cache_key)
+            if isinstance(cached, dict):
+                return cached
+
+        today = date.today()
+        current_start = today - timedelta(days=6)
+        previous_start = today - timedelta(days=13)
+        previous_end = today - timedelta(days=7)
+
+        sleep_current = await self._avg_sleep_quality(user_id, current_start, today)
+        sleep_previous = await self._avg_sleep_quality(user_id, previous_start, previous_end)
+
+        habits_current = await self._habit_completion_rate(user_id, current_start, today)
+        habits_previous = await self._habit_completion_rate(user_id, previous_start, previous_end)
+
+        study_minutes_current = await self._study_minutes(user_id, current_start, today)
+        study_minutes_previous = await self._study_minutes(user_id, previous_start, previous_end)
+
+        life_score_current = await self._avg_life_score(user_id, current_start, today)
+        life_score_previous = await self._avg_life_score(user_id, previous_start, previous_end)
+
+        mood_current = await self._avg_mood_score(user_id, current_start, today)
+        mood_previous = await self._avg_mood_score(user_id, previous_start, previous_end)
+
+        burnout_score, burnout_signals = await self._calculate_burnout_score(user_id)
+
+        payload = {
+            "window": {
+                "current": {
+                    "from": current_start.isoformat(),
+                    "to": today.isoformat(),
+                },
+                "previous": {
+                    "from": previous_start.isoformat(),
+                    "to": previous_end.isoformat(),
+                },
+            },
+            "trends": {
+                "sleep_quality": self._trend_payload(sleep_current, sleep_previous),
+                "habit_completion_rate": self._trend_payload(habits_current, habits_previous),
+                "study_minutes": self._trend_payload(study_minutes_current, study_minutes_previous),
+                "life_score": self._trend_payload(life_score_current, life_score_previous),
+                "mood_score": self._trend_payload(mood_current, mood_previous),
+            },
+            "burnout": {
+                "score": round(burnout_score, 2),
+                "severity": self._burnout_severity(burnout_score),
+                "signals": burnout_signals,
+            },
+            "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+        }
+
+        await self._cache_set_json(cache_key, payload)
+        return payload
+
+    async def invalidate_cache(self, user_id: uuid.UUID) -> None:
+        keys = [
+            f"intelligence:burnout-score:{user_id}",
+            f"intelligence:trends:{user_id}",
+        ]
+        try:
+            await self._redis.delete(*keys)
+        except Exception:
+            return
 
     async def intervene_burnout(self, user_id: uuid.UUID) -> dict[str, object]:
         from app.modules.chat.proactive import ProactiveMessageService
@@ -724,3 +813,109 @@ class PredictiveWarningService:
         if not segments:
             return "Multiple burnout indicators were observed."
         return "; ".join(segments) + "."
+
+    async def _avg_sleep_quality(self, user_id: uuid.UUID, start: date, end: date) -> float:
+        result = await self.db.execute(
+            select(func.avg(SleepRecord.sleep_quality))
+            .where(SleepRecord.user_id == user_id)
+            .where(SleepRecord.sleep_date >= start)
+            .where(SleepRecord.sleep_date <= end)
+        )
+        value = result.scalar()
+        return round(float(value or 0.0), 2)
+
+    async def _habit_completion_rate(self, user_id: uuid.UUID, start: date, end: date) -> float:
+        habits_result = await self.db.execute(
+            select(func.count(Habit.id))
+            .where(Habit.user_id == user_id)
+            .where(Habit.is_active.is_(True))
+        )
+        habits_count = int(habits_result.scalar() or 0)
+        if habits_count == 0:
+            return 0.0
+
+        completed_result = await self.db.execute(
+            select(func.count(HabitCheckIn.id))
+            .join(Habit, Habit.id == HabitCheckIn.habit_id)
+            .where(Habit.user_id == user_id)
+            .where(HabitCheckIn.check_date >= start)
+            .where(HabitCheckIn.check_date <= end)
+            .where(HabitCheckIn.completed.is_(True))
+            .where(HabitCheckIn.skipped.is_(False))
+        )
+        completed = int(completed_result.scalar() or 0)
+        days = ((end - start).days + 1)
+        denom = max(1, habits_count * days)
+        return round((completed / denom) * 100.0, 2)
+
+    async def _study_minutes(self, user_id: uuid.UUID, start: date, end: date) -> float:
+        result = await self.db.execute(
+            select(func.sum(StudySession.duration_minutes))
+            .where(StudySession.user_id == user_id)
+            .where(StudySession.session_date >= start)
+            .where(StudySession.session_date <= end)
+        )
+        return round(float(result.scalar() or 0.0), 2)
+
+    async def _avg_life_score(self, user_id: uuid.UUID, start: date, end: date) -> float:
+        start_dt = datetime.combine(start, datetime.min.time())
+        end_dt = datetime.combine(end, datetime.max.time())
+        result = await self.db.execute(
+            select(func.avg(LifeScore.score))
+            .where(LifeScore.user_id == user_id)
+            .where(LifeScore.computed_at >= start_dt)
+            .where(LifeScore.computed_at <= end_dt)
+        )
+        return round(float(result.scalar() or 0.0), 2)
+
+    async def _avg_mood_score(self, user_id: uuid.UUID, start: date, end: date) -> float:
+        result = await self.db.execute(
+            select(JournalEntry.mood)
+            .where(JournalEntry.user_id == user_id)
+            .where(JournalEntry.entry_date >= start)
+            .where(JournalEntry.entry_date <= end)
+            .where(JournalEntry.mood.is_not(None))
+        )
+        moods = [m for m in result.scalars().all() if m is not None]
+        if not moods:
+            return 0.0
+        total = sum(_MOOD_SCORE.get(mood, 55.0) for mood in moods)
+        return round(total / len(moods), 2)
+
+    @staticmethod
+    def _trend_payload(current: float, previous: float) -> dict[str, object]:
+        delta = round(current - previous, 2)
+        if delta > 0:
+            direction = "up"
+        elif delta < 0:
+            direction = "down"
+        else:
+            direction = "flat"
+
+        pct_change = 0.0
+        if previous != 0:
+            pct_change = round((delta / previous) * 100.0, 2)
+
+        return {
+            "current": round(current, 2),
+            "previous": round(previous, 2),
+            "delta": delta,
+            "pct_change": pct_change,
+            "direction": direction,
+        }
+
+    async def _cache_get_json(self, key: str) -> dict | None:
+        try:
+            raw = await self._redis.get(key)
+            if not raw:
+                return None
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    async def _cache_set_json(self, key: str, payload: dict) -> None:
+        try:
+            await self._redis.setex(key, self._cache_ttl_seconds, json.dumps(payload, default=str))
+        except Exception:
+            return

@@ -11,13 +11,38 @@ from datetime import date
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.journal.models import JournalMood
-from app.modules.journal.schemas import JournalCreate, JournalRead
+from app.modules.journal.schemas import (
+    JournalCreate,
+    JournalDraftUpsert,
+    JournalRead,
+    JournalUnlockRequest,
+    JournalUnlockResponse,
+)
 from app.modules.journal.service import JournalService
 from app.shared.types import success
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/journal", tags=["Journal Vault"])
+
+
+@router.post("/unlock")
+async def unlock_journal(
+    data: JournalUnlockRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = JournalService(db)
+    unlock_expires_at, session_token = await service.unlock(
+        user_id=user_id,
+        passphrase=data.passphrase,
+    )
+    payload = JournalUnlockResponse(
+        unlocked=True,
+        unlock_expires_at=unlock_expires_at,
+        session_token=session_token,
+    )
+    return success(payload.model_dump(mode="json"))
 
 
 @router.post("", status_code=201)
@@ -53,6 +78,43 @@ async def list_entries(
     return success([entry.model_dump(mode="json") for entry in entries])
 
 
+@router.get("/draft")
+async def get_draft(
+    passphrase: str | None = Query(default=None, min_length=4, max_length=256),
+    unlock_token: str | None = Query(default=None, min_length=8, max_length=255),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = JournalService(db)
+    draft = await service.get_draft(
+        user_id=user_id,
+        passphrase=passphrase,
+        unlock_token=unlock_token,
+    )
+    return success(draft.model_dump(mode="json") if draft else None)
+
+
+@router.put("/draft")
+async def upsert_draft(
+    data: JournalDraftUpsert,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = JournalService(db)
+    draft = await service.upsert_draft(user_id=user_id, data=data)
+    return success(draft.model_dump(mode="json"))
+
+
+@router.delete("/draft")
+async def delete_draft(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = JournalService(db)
+    deleted = await service.delete_draft(user_id=user_id)
+    return success({"deleted": deleted})
+
+
 @router.post("/{entry_id}/read")
 async def read_entry(
     entry_id: uuid.UUID,
@@ -65,6 +127,7 @@ async def read_entry(
         user_id=user_id,
         entry_id=entry_id,
         passphrase=data.passphrase,
+        unlock_token=data.unlock_token,
     )
     return success(entry.model_dump(mode="json"))
 
@@ -92,5 +155,6 @@ async def generate_summary(
         user_id=user_id,
         entry_id=entry_id,
         passphrase=data.passphrase,
+        unlock_token=data.unlock_token,
     )
     return success(entry.model_dump(mode="json"))

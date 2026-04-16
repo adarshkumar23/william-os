@@ -64,6 +64,9 @@ class EventType(str, Enum):
     DAILY_CYCLE_PREWAKE = "system.prewake_cycle"
     DAILY_CYCLE_NIGHT = "system.night_cycle"
 
+    # Integrations
+    INTEGRATION_TRIGGERED = "integrations.triggered"
+
 
 @dataclass(frozen=True, slots=True)
 class Event:

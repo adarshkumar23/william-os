@@ -151,3 +151,35 @@ class StudyProgress(BaseModel):
 class StudyPlanRequest(BaseModel):
     target_date: DateType
     daily_hours: int = Field(ge=1, le=16)
+
+
+class FocusSessionStartRequest(BaseModel):
+    subject_id: UUID | None = None
+    planned_minutes: int = Field(default=25, ge=5, le=240)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class FocusSessionCompleteRequest(BaseModel):
+    actual_minutes: int | None = Field(default=None, ge=1, le=600)
+    distraction_count: int = Field(default=0, ge=0, le=1000)
+    focus_score: float | None = Field(default=None, ge=1, le=10)
+    notes: str | None = Field(default=None, max_length=4000)
+    log_as_study_session: bool = True
+
+
+class FocusSessionResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    subject_id: UUID | None
+    started_at: datetime
+    ended_at: datetime | None
+    planned_minutes: int
+    actual_minutes: int | None
+    distraction_count: int
+    focus_score: float | None
+    notes: str | None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

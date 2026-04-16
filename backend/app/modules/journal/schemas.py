@@ -14,13 +14,40 @@ from pydantic import BaseModel, Field
 
 class JournalCreate(BaseModel):
     content: str = Field(min_length=1)
-    passphrase: str = Field(min_length=4, max_length=256)
+    passphrase: str | None = Field(default=None, min_length=4, max_length=256)
+    unlock_token: str | None = Field(default=None, min_length=8, max_length=255)
     mood: JournalMood | None = None
     tags: list[str] = []
 
 
 class JournalRead(BaseModel):
+    passphrase: str | None = Field(default=None, min_length=4, max_length=256)
+    unlock_token: str | None = Field(default=None, min_length=8, max_length=255)
+
+
+class JournalUnlockRequest(BaseModel):
     passphrase: str = Field(min_length=4, max_length=256)
+
+
+class JournalUnlockResponse(BaseModel):
+    unlocked: bool
+    unlock_expires_at: datetime
+    session_token: str
+
+
+class JournalDraftUpsert(BaseModel):
+    content: str = Field(default="", max_length=20000)
+    passphrase: str | None = Field(default=None, min_length=4, max_length=256)
+    unlock_token: str | None = Field(default=None, min_length=8, max_length=255)
+    mood: JournalMood | None = None
+    tags: list[str] = []
+
+
+class JournalDraftResponse(BaseModel):
+    content: str
+    mood: JournalMood | None
+    tags: list[str]
+    updated_at: datetime
 
 
 class JournalMetadata(BaseModel):

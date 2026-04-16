@@ -157,6 +157,18 @@ export type JournalEntryDecrypted = JournalEntryMeta & {
   content: string;
 };
 
+export type JournalUnlockResponse = {
+  unlocked: boolean;
+  unlock_expires_at: string;
+};
+
+export type JournalDraft = {
+  content: string;
+  mood?: string | null;
+  tags?: string[];
+  updated_at: string;
+};
+
 export type Medicine = {
   id: string;
   name: string;
@@ -213,6 +225,16 @@ export type MockTest = {
   percentage: number;
   date: string;
   [key: string]: unknown;
+};
+
+export type StudyDashboard = {
+  subjects_count: number;
+  cards_due_today: number;
+  cards_due_next_7d: number;
+  study_minutes_last_7d: number;
+  avg_comprehension_last_7d: number;
+  mock_avg_last_5: number;
+  suggestion: Record<string, unknown>;
 };
 
 export type Workout = {
@@ -284,6 +306,22 @@ export type CalendarEvent = {
 
 export type CalendarTodayResponse = {
   events: CalendarEvent[];
+};
+
+export type NativeCalendarEventPayload = {
+  title: string;
+  start: string;
+  end: string;
+  description?: string;
+  location?: string;
+};
+
+export type NativeCalendarEventPatch = {
+  title?: string;
+  start?: string;
+  end?: string;
+  description?: string;
+  location?: string;
 };
 
 export type BriefingScheduleItem = {
@@ -440,6 +478,11 @@ export type AgentRecommendationLog = {
   status: string;
   is_active: boolean;
   created_at: string;
+};
+
+export type AgentRunAllResult = {
+  recommendations: Record<string, unknown>[];
+  executed_action: Record<string, unknown> | null;
 };
 
 export type BurnoutScorePayload = {
@@ -653,6 +696,12 @@ export type ChatMessage = {
   extra_metadata?: Record<string, unknown> | null;
   created_at: string;
 };
+
+export type ChatStreamEvent =
+  | { event: "status"; data: { state: string } }
+  | { event: "user_message"; data: ChatMessage }
+  | { event: "delta"; data: { delta: string; content: string } }
+  | { event: "done"; data: { assistant_message: ChatMessage } };
 
 
 export type AgentName = "health" | "study" | "trading" | "executive" | "recovery" | "os";

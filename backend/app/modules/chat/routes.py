@@ -5,6 +5,7 @@ Endpoints for creating chat sessions and sending messages.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -21,6 +22,7 @@ from app.modules.chat.schemas import (
 from app.modules.chat.service import ChatService
 from app.shared.types import success
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +31,10 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 
 class ProactiveTriggerRequest(BaseModel):
     trigger: str = Field(pattern=r"^(morning|afternoon|evening)$")
+
+
+def _sse_event(event_name: str, payload: dict[str, Any]) -> str:
+    return f"event: {event_name}\ndata: {json.dumps(payload, default=str)}\n\n"
 
 
 @router.post("/sessions", status_code=201)
@@ -102,6 +108,49 @@ async def send_message(
         "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(mode="json", by_alias=True),
         "assistant_message": ChatMessageResponse.model_validate(assistant_msg).model_dump(mode="json", by_alias=True)
     })
+
+
+@router.post("/sessions/{session_id}/messages/stream")
+async def send_message_stream(
+    session_id: uuid.UUID,
+    data: ChatMessageCreate,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    service = ChatService(db)
+
+    async def event_generator():
+        yield _sse_event("status", {"state": "generating"})
+        async for event in service.stream_message(
+            session_id=session_id,
+            user_id=user_id,
+            content=data.content,
+        ):
+            event_type = str(event.get("event") or "")
+            payload = event.get("payload")
+
+            if event_type == "user_message":
+                user_payload = ChatMessageResponse.model_validate(payload).model_dump(mode="json", by_alias=True)
+                yield _sse_event("user_message", user_payload)
+                continue
+
+            if event_type == "delta" and isinstance(payload, dict):
+                yield _sse_event("delta", payload)
+                continue
+
+            if event_type == "done":
+                assistant_payload = ChatMessageResponse.model_validate(payload).model_dump(mode="json", by_alias=True)
+                yield _sse_event("done", {"assistant_message": assistant_payload})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/sessions/{session_id}/messages")

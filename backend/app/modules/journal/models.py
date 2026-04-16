@@ -10,7 +10,7 @@ import uuid
 from datetime import date
 from enum import Enum
 
-from sqlalchemy import Date, Enum as SAEnum, ForeignKey, LargeBinary, String, Text
+from sqlalchemy import Date, Enum as SAEnum, ForeignKey, LargeBinary, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,3 +53,25 @@ class JournalEntry(Base):
 
     # AI-generated summary (encrypted separately)
     encrypted_summary: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+
+
+class JournalDraft(Base):
+    """Single encrypted draft per user for in-progress journaling."""
+
+    __tablename__ = "journal_drafts"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_journal_drafts_user_id"),
+        {"schema": "journal"},
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    encrypted_content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    mood: Mapped[JournalMood | None] = mapped_column(
+        SAEnum(JournalMood, schema="journal"), nullable=True,
+    )
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)

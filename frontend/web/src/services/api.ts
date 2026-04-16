@@ -6,13 +6,17 @@ import {
   AdminUser,
   ApiEnvelope,
   ActivityFeedItem,
+  AgentRunAllResult,
   AgentRecommendationLog,
   AgentStatus,
   AuthTokens,
   AskTimelineResponse,
   BurnoutInterventionPayload,
   BurnoutScorePayload,
+  CalendarEvent,
   CalendarSyncConflict,
+  NativeCalendarEventPatch,
+  NativeCalendarEventPayload,
   OnboardingCompleteResponse,
   OnboardingCompletePayload,
   OnboardingStatus,
@@ -37,7 +41,9 @@ import {
   LifeScoreHistoryPoint,
   TimelineEvent,
   JournalEntryDecrypted,
+  JournalDraft,
   JournalEntryMeta,
+  JournalUnlockResponse,
   Medicine,
   MedicineReminder,
   MockTest,
@@ -51,6 +57,7 @@ import {
   SleepRecord,
   SleepStats,
   StudySession,
+  StudyDashboard,
   Subject,
   Trade,
   UserRule,
@@ -61,6 +68,7 @@ import {
   ChatSession,
   ChatSessionListItem,
   ChatMessage,
+  ChatStreamEvent,
 } from "../types/api";
 import { recordApiError, recordRefreshTokenFailure } from "../observability/client";
 
@@ -204,8 +212,19 @@ const unwrap = <T>(response: ApiEnvelope<T>) => {
   return response.data;
 };
 
+const normalizeParams = (params?: AnyRecord): AnyRecord | undefined => {
+  if (!params) {
+    return undefined;
+  }
+  const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null);
+  if (entries.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(entries);
+};
+
 const get = async <T>(url: string, params?: AnyRecord) => {
-  const response = await apiClient.get<ApiEnvelope<T>>(url, { params });
+  const response = await apiClient.get<ApiEnvelope<T>>(url, { params: normalizeParams(params) });
   return unwrap(response.data);
 };
 
@@ -319,6 +338,33 @@ export const api = {
       const response = await apiClient.get<{ conflicts: CalendarSyncConflict[]; count: number }>("/calendar/sync/conflicts");
       return response.data;
     },
+    listNativeEvents: async (days = 30) => {
+      const response = await apiClient.get<{ events: CalendarEvent[]; count: number }>(
+        "/calendar/native/events",
+        { params: { days } },
+      );
+      return response.data;
+    },
+    createNativeEvent: async (payload: NativeCalendarEventPayload) => {
+      const response = await apiClient.post<{ event: CalendarEvent; status: string }>(
+        "/calendar/native/events",
+        payload,
+      );
+      return response.data;
+    },
+    updateNativeEvent: async (eventId: string, payload: NativeCalendarEventPatch) => {
+      const response = await apiClient.patch<{ event: CalendarEvent; status: string }>(
+        `/calendar/native/events/${eventId}`,
+        payload,
+      );
+      return response.data;
+    },
+    deleteNativeEvent: async (eventId: string) => {
+      const response = await apiClient.delete<{ status: string; event_id: string }>(
+        `/calendar/native/events/${eventId}`,
+      );
+      return response.data;
+    },
   },
 
   feed: {
@@ -331,6 +377,7 @@ export const api = {
     recommendations: (params?: { limit?: number }) =>
       get<AgentRecommendationLog[]>("/agents/recommendations", params),
     trigger: (name: string) => post<Record<string, unknown>>(`/agents/${name}/trigger`),
+    runAll: () => post<AgentRunAllResult>("/agents/run-all"),
   },
 
   rules: {
@@ -373,11 +420,16 @@ export const api = {
   },
 
   journal: {
-    create: (payload: { content: string; passphrase: string; mood?: string; tags?: string[] }) =>
+    create: (payload: { content: string; passphrase?: string; mood?: string; tags?: string[] }) =>
       post<JournalEntryMeta>("/journal", payload),
     list: (params?: AnyRecord) => get<JournalEntryMeta[]>("/journal", params),
-    read: (entryId: string, passphrase: string) => post<JournalEntryDecrypted>(`/journal/${entryId}/read`, { passphrase }),
-    summary: (entryId: string, passphrase: string) => post<JournalEntryDecrypted>(`/journal/${entryId}/summary`, { passphrase }),
+    unlock: (passphrase: string) => post<JournalUnlockResponse>("/journal/unlock", { passphrase }),
+    getDraft: (passphrase?: string) => get<JournalDraft | null>("/journal/draft", { passphrase }),
+    saveDraft: (payload: { content: string; passphrase?: string; mood?: string; tags?: string[] }) =>
+      apiClient.put<ApiEnvelope<JournalDraft>>("/journal/draft", payload).then((response) => unwrap(response.data)),
+    clearDraft: () => del<{ deleted: boolean }>("/journal/draft"),
+    read: (entryId: string, passphrase?: string) => post<JournalEntryDecrypted>(`/journal/${entryId}/read`, { passphrase }),
+    summary: (entryId: string, passphrase?: string) => post<JournalEntryDecrypted>(`/journal/${entryId}/summary`, { passphrase }),
     remove: (entryId: string) => del<{ deleted: boolean }>(`/journal/${entryId}`),
   },
 
@@ -439,6 +491,7 @@ export const api = {
     listMocks: (params?: AnyRecord) => get<MockTest[]>("/study/mocks", params),
     createMock: (payload: AnyRecord) => post<MockTest>("/study/mocks", payload),
     progress: () => get<Array<Record<string, unknown>>>("/study/progress"),
+    dashboard: () => get<StudyDashboard>("/study/dashboard"),
     plan: (payload: { target_date: string; daily_hours: number }) => post<Array<Record<string, unknown>>>("/study/plan", payload),
     suggest: () => get<Record<string, unknown>>("/study/suggest"),
   },
@@ -559,6 +612,68 @@ export const api = {
     deleteSession: (sessionId: string) => del<{ deleted: boolean }>(`/chat/sessions/${sessionId}`),
     sendMessage: (sessionId: string, payload: { content: string }) => 
       post<{ user_message: ChatMessage; assistant_message: ChatMessage }>(`/chat/sessions/${sessionId}/messages`, payload),
+    streamMessage: async (
+      sessionId: string,
+      payload: { content: string },
+      onEvent: (event: ChatStreamEvent) => void,
+    ) => {
+      const token = getAccessToken();
+      const response = await fetch(`${baseURL}/chat/sessions/${sessionId}/messages/stream`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error("Failed to stream chat response");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          const block = buffer.slice(0, boundary).trim();
+          buffer = buffer.slice(boundary + 2);
+          if (block) {
+            const lines = block.split("\n");
+            const eventLine = lines.find((line) => line.startsWith("event:"));
+            const dataLine = lines.find((line) => line.startsWith("data:"));
+            if (eventLine && dataLine) {
+              const eventName = eventLine.replace("event:", "").trim();
+              const payloadText = dataLine.replace("data:", "").trim();
+              try {
+                const parsed = JSON.parse(payloadText);
+                if (
+                  eventName === "status"
+                  || eventName === "user_message"
+                  || eventName === "delta"
+                  || eventName === "done"
+                ) {
+                  onEvent({ event: eventName, data: parsed } as ChatStreamEvent);
+                }
+              } catch {
+                // Ignore malformed partial event payloads.
+              }
+            }
+          }
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
+    },
     getMessages: (sessionId: string, params?: { limit?: number }) => 
       get<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`, params),
     triggerProactive: (trigger: "morning" | "afternoon" | "evening") =>

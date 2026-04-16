@@ -1,0 +1,149 @@
+{
+  "name": "William - Webhook Intake Router",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "william-intake",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "id": "Webhook_In",
+      "name": "Webhook In",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [220, 260]
+    },
+    {
+      "parameters": {
+        "value1": "={{$json[\"event_type\"]}}",
+        "rules": [
+          {"operation": "equal", "value2": "sleep"},
+          {"operation": "equal", "value2": "workout"},
+          {"operation": "equal", "value2": "habit-checkin"},
+          {"operation": "equal", "value2": "medicine-log"}
+        ]
+      },
+      "id": "Switch_Event",
+      "name": "Switch Event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [460, 260]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/sleep'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{$json}}"
+      },
+      "id": "POST_Sleep",
+      "name": "POST /integrations/sleep",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 120]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/workout'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{$json}}"
+      },
+      "id": "POST_Workout",
+      "name": "POST /integrations/workout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/habit-checkin'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{$json}}"
+      },
+      "id": "POST_Habit",
+      "name": "POST /integrations/habit-checkin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 320]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.WILLIAM_API_BASE_URL + '/integrations/medicine-log'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.WILLIAM_API_KEY}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{$json}}"
+      },
+      "id": "POST_Medicine",
+      "name": "POST /integrations/medicine-log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, routed_event: $json.event_type || 'unknown' } }}"
+      },
+      "id": "Webhook_Response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1020, 260]
+    }
+  ],
+  "connections": {
+    "Webhook In": {
+      "main": [[{"node": "Switch Event", "type": "main", "index": 0}]]
+    },
+    "Switch Event": {
+      "main": [
+        [{"node": "POST /integrations/sleep", "type": "main", "index": 0}],
+        [{"node": "POST /integrations/workout", "type": "main", "index": 0}],
+        [{"node": "POST /integrations/habit-checkin", "type": "main", "index": 0}],
+        [{"node": "POST /integrations/medicine-log", "type": "main", "index": 0}]
+      ]
+    },
+    "POST /integrations/sleep": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    },
+    "POST /integrations/workout": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    },
+    "POST /integrations/habit-checkin": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    },
+    "POST /integrations/medicine-log": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "pinData": {},
+  "versionId": "1"
+}

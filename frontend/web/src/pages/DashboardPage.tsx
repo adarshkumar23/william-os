@@ -47,6 +47,8 @@ import {
   WeeklyReview,
 } from "../types/api";
 
+const AGENT_AUTORUN_KEY_PREFIX = "dashboard:agents:autorun";
+
 function toDate(value: string) {
   if (value.includes("T")) {
     return new Date(value);
@@ -139,6 +141,42 @@ export default function DashboardPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    const storageKey = `${AGENT_AUTORUN_KEY_PREFIX}:${user.id}`;
+    const today = format(new Date(), "yyyy-MM-dd");
+    if (localStorage.getItem(storageKey) === today) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        await api.agents.runAll();
+        localStorage.setItem(storageKey, today);
+        const [warningRows, burnout] = await Promise.all([
+          api.intelligence.warnings(),
+          api.intelligence.burnoutScore(),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setWarnings(warningRows);
+        setBurnoutScore(burnout);
+      } catch {
+        // Keep dashboard load resilient if agent orchestration is unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const score = Math.round(Number(lifeScore?.score || 0));
   const todayName = String(user?.display_name || user?.full_name || user?.username || "there").split(" ")[0];
