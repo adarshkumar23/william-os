@@ -68,6 +68,11 @@ class EventType(str, Enum):
     # Integrations
     INTEGRATION_TRIGGERED = "integrations.triggered"
 
+    # Career
+    CAREER_APPLICATION_STATUS_CHANGED = "career.application.status_changed"
+    CAREER_SCORE_RECOMPUTED = "career.score.recomputed"
+    CAREER_PROBLEM_SOLVED = "career.problem.solved"
+
 
 @dataclass(frozen=True, slots=True)
 class Event:

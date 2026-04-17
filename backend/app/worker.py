@@ -141,6 +141,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0),  # 3 AM UTC
         "options": {"queue": "maintenance"},
     },
+    "career-score-snapshot": {
+        "task": "app.worker.compute_and_snapshot_all_users",
+        "schedule": crontab(hour=2, minute=30),  # 02:30 UTC = ~08:00 IST
+        "options": {"queue": "analysis"},
+    },
 }
 
 
@@ -1291,3 +1296,43 @@ def deliver_webhook(self, delivery_id: str):
             raise self.retry(countdown=int(outcome.get("countdown") or 30))
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1)) from exc
+
+
+@celery_app.task(name="app.worker.compute_and_snapshot_all_users", bind=True, max_retries=2)
+def compute_and_snapshot_all_users(self):
+    """Daily 02:30 UTC (08:00 IST): compute career score snapshot for all active users."""
+    import structlog
+
+    logger = structlog.get_logger("worker.career_score")
+    logger.info("career_score_snapshot_started")
+
+    async def _run():
+        from sqlalchemy import select
+
+        from app.core.database import async_session_factory
+        from app.modules.auth.models import User
+        from app.modules.career.services import compute_career_score
+
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.is_active == True))  # noqa: E712
+            users = result.scalars().all()
+
+            for user in users:
+                try:
+                    score_data = await compute_career_score(db, user.id)
+                    logger.info(
+                        "career_score_snapshotted",
+                        user_id=str(user.id),
+                        overall=score_data["overall"],
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "career_score_snapshot_failed",
+                        user_id=str(user.id),
+                        error=str(exc),
+                    )
+
+    try:
+        _run_async(_run())
+    except Exception as exc:
+        self.retry(exc=exc, countdown=60 * (self.request.retries + 1))

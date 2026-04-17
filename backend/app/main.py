@@ -223,6 +223,9 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(decisions_router, prefix=prefix)
     app.include_router(experiments_router, prefix=prefix)
     app.include_router(export_router, prefix=prefix)
+    from app.modules.career.routes import router as career_router
+
+    app.include_router(career_router, prefix=prefix)
     # Future modules added here:
     # app.include_router(audit_router, prefix=prefix)
 

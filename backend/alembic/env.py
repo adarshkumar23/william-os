@@ -33,6 +33,14 @@ from app.modules.sleep.models import SleepDebt, SleepRecommendation, SleepRecord
 from app.modules.study.models import MockTest, RevisionCard, StudySession, Subject  # noqa
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist  # noqa
 from app.modules.voice.models import VoiceCommand  # noqa
+from app.modules.career.models import (  # noqa
+    Application,
+    Contact,
+    Opportunity,
+    Problem,
+    Project,
+    ScoreSnapshot,
+)
 
 config = context.config
 settings = get_settings()
