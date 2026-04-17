@@ -266,7 +266,7 @@ async def list_applications(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     svc = ApplicationService(db)
-    items = await svc.list(user_id, stage, archived, limit, offset)
+    items = await svc.get_all(user_id, stage, archived, limit, offset)
     return success([_serialize(i) for i in items])
 
 
@@ -349,7 +349,7 @@ async def list_contacts(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     svc = ContactService(db)
-    items = await svc.list(user_id, limit, offset)
+    items = await svc.get_all(user_id, limit, offset)
     return success([_serialize(i) for i in items])
 
 

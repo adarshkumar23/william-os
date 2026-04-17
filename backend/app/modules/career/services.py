@@ -273,7 +273,7 @@ class ApplicationService:
         await self.db.refresh(obj)
         return obj
 
-    async def list(
+    async def get_all(
         self,
         user_id: uuid.UUID,
         stage: str | None = None,
@@ -358,7 +358,7 @@ class ContactService:
         await self.db.refresh(obj)
         return obj
 
-    async def list(self, user_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[Contact]:
+    async def get_all(self, user_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[Contact]:
         result = await self.db.execute(
             select(Contact).where(Contact.user_id == user_id)
             .order_by(Contact.name)
