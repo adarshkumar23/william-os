@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS base
+FROM python:3.11-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── Dependencies ─────────────────────────────────────────────────
 FROM base AS deps
 COPY pyproject.toml .
-RUN pip install --upgrade pip && pip install -e ".[dev]"
+RUN mkdir -p app && pip install --upgrade pip && pip install -e ".[dev]"
 
 # ── Production ───────────────────────────────────────────────────
 FROM deps AS production
