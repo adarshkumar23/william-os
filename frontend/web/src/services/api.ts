@@ -72,10 +72,14 @@ import {
 } from "../types/api";
 import { recordApiError, recordRefreshTokenFailure } from "../observability/client";
 
+const baseURL = "/api/v1";
+
 // C10 fix: access token in memory only; refresh token lives in httpOnly cookie.
 let _accessToken: string | null = null;
 
 export const getAccessToken = () => _accessToken;
+// Refresh token is in httpOnly cookie — not accessible from JS; kept for API shape compat.
+export const getRefreshToken = (): string | null => null;
 
 export const saveTokens = (tokens: Partial<AuthTokens>) => {
   if (tokens.access_token) {
@@ -86,6 +90,7 @@ export const saveTokens = (tokens: Partial<AuthTokens>) => {
 export const clearAuthStorage = () => {
   _accessToken = null;
 };
+
 const apiClient = axios.create({
   baseURL,
   withCredentials: true,
@@ -112,15 +117,6 @@ const refreshAccessToken = async (): Promise<string | null> => {
     if (!response.data.ok) {
       return null;
     }
-    const tokens = response.data.data;
-    saveTokens(tokens);
-    return tokens.access_token;
-  } catch {
-    recordRefreshTokenFailure(window.location.pathname);
-    return null;
-  }
-};
-
     const tokens = response.data.data;
     saveTokens(tokens);
     return tokens.access_token;
