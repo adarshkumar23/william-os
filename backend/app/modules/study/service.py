@@ -15,7 +15,13 @@ import structlog
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.memory.service import MemoryService
-from app.modules.study.models import MockTest, RevisionCard, StudyFocusSession, StudySession, Subject
+from app.modules.study.models import (
+    MockTest,
+    RevisionCard,
+    StudyFocusSession,
+    StudySession,
+    Subject,
+)
 from app.modules.study.schemas import (
     FocusSessionCompleteRequest,
     FocusSessionResponse,
@@ -460,9 +466,7 @@ class StudyService:
             study_agg_result,
             mock_rows_result,
         ) = await asyncio.gather(
-            self.db.execute(
-                select(func.count(Subject.id)).where(Subject.user_id == user_id)
-            ),
+            self.db.execute(select(func.count(Subject.id)).where(Subject.user_id == user_id)),
             self.db.execute(
                 select(func.count(RevisionCard.id))
                 .where(RevisionCard.user_id == user_id)

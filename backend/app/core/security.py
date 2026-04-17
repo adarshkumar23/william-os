@@ -1,11 +1,7 @@
+"""WILLIAM OS — Security utilities.
+Cleaned version (M1): no HTTPException raised from core; `decode_token_safe` added for middleware.
+"""
 from __future__ import annotations
-from fastapi import HTTPException
-from starlette import status
-"""
-WILLIAM OS — Security Utilities
-JWT tokens, password hashing, AES-256-GCM encryption for journal vault.
-"""
-
 
 import base64
 import hashlib
@@ -22,9 +18,6 @@ from passlib.context import CryptContext
 from app.core.config import get_settings
 
 settings = get_settings()
-
-# ── Password Hashing ────────────────────────────────────────────
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -36,32 +29,16 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain[:72], hashed)
 
 
-# ── JWT Tokens ───────────────────────────────────────────────────
-
-class TokenPayload:
-    def __init__(self, sub: str, exp: datetime, token_type: str, jti: str):
-        self.sub = sub
-        self.exp = exp
-        self.token_type = token_type
-        self.jti = jti
-
-
 def create_access_token(user_id: uuid.UUID, extra_claims: dict | None = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "exp": now + timedelta(minutes=settings.jwt_access_token_expire_minutes),
-        "iat": now,
-        "type": "access",
-        "jti": uuid.uuid4().hex,
+        "iat": now, "type": "access", "jti": uuid.uuid4().hex,
     }
     if extra_claims:
         payload.update(extra_claims)
-    return jwt.encode(
-        payload,
-        settings.jwt_secret_key.get_secret_value(),
-        algorithm=settings.jwt_algorithm,
-    )
+    return jwt.encode(payload, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm)
 
 
 def create_refresh_token(user_id: uuid.UUID) -> str:
@@ -69,55 +46,37 @@ def create_refresh_token(user_id: uuid.UUID) -> str:
     payload = {
         "sub": str(user_id),
         "exp": now + timedelta(days=settings.jwt_refresh_token_expire_days),
-        "iat": now,
-        "type": "refresh",
-        "jti": uuid.uuid4().hex,
+        "iat": now, "type": "refresh", "jti": uuid.uuid4().hex,
     }
-    return jwt.encode(
-        payload,
-        settings.jwt_secret_key.get_secret_value(),
-        algorithm=settings.jwt_algorithm,
-    )
+    return jwt.encode(payload, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm)
+
 
 def decode_token(token: str) -> dict:
-    from fastapi import HTTPException
-    from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+    """Decode JWT. Raises jwt.InvalidTokenError / jwt.ExpiredSignatureError on failure.
+    Call sites should convert to their own error type (e.g. AuthenticationError) — core stays framework-agnostic.
+    """
+    return jwt.decode(
+        token,
+        settings.jwt_secret_key.get_secret_value(),
+        algorithms=[settings.jwt_algorithm],
+    )
+
+
+def decode_token_safe(token: str) -> dict | None:
+    """Non-raising variant for middleware. Returns None on any failure."""
     try:
-        return jwt.decode(
-            token,
-            settings.jwt_secret_key.get_secret_value(),
-            algorithms=["HS256"]
-        )
-    except ExpiredSignatureError:
-        raise HTTPException(
-            status_code=401,
-            detail="Token has expired. Please log in again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except (InvalidTokenError, Exception) as e:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid authentication token.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-# ── AES-256-GCM Encryption (Journal Vault) ──────────────────────
+        return decode_token(token)
+    except Exception:
+        return None
+
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
-    """Derive a 256-bit key from user passphrase using PBKDF2."""
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=settings.encryption_iterations,
-    )
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
+                    iterations=settings.encryption_iterations)
     return kdf.derive(passphrase.encode("utf-8"))
 
 
 def encrypt_text(plaintext: str, passphrase: str) -> bytes:
-    """
-    Encrypt text with AES-256-GCM.
-    Returns: salt (16) + nonce (12) + ciphertext (variable)
-    """
     salt = os.urandom(16)
     key = _derive_key(passphrase, salt)
     aesgcm = AESGCM(key)
@@ -127,24 +86,16 @@ def encrypt_text(plaintext: str, passphrase: str) -> bytes:
 
 
 def decrypt_text(encrypted: bytes, passphrase: str) -> str:
-    """Decrypt AES-256-GCM encrypted data. Raises on wrong passphrase."""
-    salt = encrypted[:16]
-    nonce = encrypted[16:28]
-    ciphertext = encrypted[28:]
+    salt, nonce, ct = encrypted[:16], encrypted[16:28], encrypted[28:]
     key = _derive_key(passphrase, salt)
-    aesgcm = AESGCM(key)
-    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-    return plaintext.decode("utf-8")
+    return AESGCM(key).decrypt(nonce, ct, None).decode("utf-8")
 
 
 def generate_device_fingerprint(user_agent: str, ip: str) -> str:
-    """Deterministic device fingerprint for multi-device tracking."""
-    raw = f"{user_agent}:{ip}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return hashlib.sha256(f"{user_agent}:{ip}".encode()).hexdigest()[:16]
 
 
 def hash_token(token: str) -> str:
-    """Stable SHA-256 hash for token lookup without storing raw token text."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
@@ -154,17 +105,20 @@ def _master_key() -> bytes:
 
 
 def encrypt_api_secret(plaintext: str) -> str:
-    """Encrypt API keys with app-level AES-256-GCM and return urlsafe payload."""
     nonce = os.urandom(12)
-    aesgcm = AESGCM(_master_key())
-    ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
-    return base64.urlsafe_b64encode(nonce + ciphertext).decode("utf-8")
+    ct = AESGCM(_master_key()).encrypt(nonce, plaintext.encode("utf-8"), None)
+    return base64.urlsafe_b64encode(nonce + ct).decode("utf-8")
 
 
 def decrypt_api_secret(payload: str) -> str:
-    """Decrypt API key payload created by encrypt_api_secret."""
     raw = base64.urlsafe_b64decode(payload.encode("utf-8"))
-    nonce, ciphertext = raw[:12], raw[12:]
-    aesgcm = AESGCM(_master_key())
-    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-    return plaintext.decode("utf-8")
+    nonce, ct = raw[:12], raw[12:]
+    return AESGCM(_master_key()).decrypt(nonce, ct, None).decode("utf-8")
+
+
+# ── API Key helpers (C3 fix) ──────────────────────────────────────────────────
+def hash_api_key(raw_key: str) -> str:
+    """Salted-SHA256 hash for storage. The secret is `ENCRYPTION_MASTER_SALT`-scoped
+    so an attacker needs both the DB row AND the master salt to brute-force."""
+    salt = settings.encryption_master_salt.get_secret_value().encode("utf-8")
+    return hashlib.sha256(salt + raw_key.encode("utf-8")).hexdigest()

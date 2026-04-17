@@ -76,7 +76,9 @@ class WebhookRegistration(Base):
     webhook_url: Mapped[str] = mapped_column(Text, nullable=False)
     secret: Mapped[str] = mapped_column(String(64), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_triggered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     failure_count: Mapped[int] = mapped_column(Integer, default=0)
 
 

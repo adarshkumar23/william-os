@@ -1,5 +1,6 @@
 -- WILLIAM OS — Schema Initialization
 -- Each module gets its own schema namespace for isolation.
+-- Keep this file in sync with the module list in app/modules/ and with Makefile db-reset.
 
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE SCHEMA IF NOT EXISTS scheduler;
@@ -21,7 +22,14 @@ CREATE SCHEMA IF NOT EXISTS memory;
 CREATE SCHEMA IF NOT EXISTS agents;
 CREATE SCHEMA IF NOT EXISTS rules;
 CREATE SCHEMA IF NOT EXISTS security;
+CREATE SCHEMA IF NOT EXISTS briefing;
+CREATE SCHEMA IF NOT EXISTS chat;
+CREATE SCHEMA IF NOT EXISTS calendar;
+CREATE SCHEMA IF NOT EXISTS feed;
+CREATE SCHEMA IF NOT EXISTS experiments;
+CREATE SCHEMA IF NOT EXISTS export;
+CREATE SCHEMA IF NOT EXISTS integrations;
+CREATE SCHEMA IF NOT EXISTS secrets;
 
--- Enable extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";

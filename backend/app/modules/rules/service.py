@@ -572,9 +572,7 @@ class RulesService:
         )
         latest_sleep = sleep_result.scalar_one_or_none()
         sleep_hours = (
-            round(float(latest_sleep.sleep_duration_minutes) / 60.0, 2)
-            if latest_sleep
-            else 0.0
+            round(float(latest_sleep.sleep_duration_minutes) / 60.0, 2) if latest_sleep else 0.0
         )
 
         workouts_result = await self.db.execute(

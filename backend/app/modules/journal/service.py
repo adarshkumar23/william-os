@@ -8,10 +8,7 @@ from __future__ import annotations
 import json
 import secrets
 import uuid
-from datetime import date
-from datetime import datetime
-from datetime import timedelta
-from datetime import UTC
+from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
 
 import httpx
@@ -324,7 +321,9 @@ class JournalService:
         else:
             latest_token = await self._get_latest_unlock_token(user_id=user_id)
             if latest_token:
-                cached = await self._read_unlock_session(user_id=user_id, session_token=latest_token)
+                cached = await self._read_unlock_session(
+                    user_id=user_id, session_token=latest_token
+                )
                 if cached:
                     return cached
 

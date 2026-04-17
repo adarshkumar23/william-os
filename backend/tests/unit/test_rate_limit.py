@@ -21,12 +21,30 @@ class _FakePipeline:
         self.client = client
         self.ops: list[tuple[str, tuple]] = []
 
+    async def __aenter__(self) -> _FakePipeline:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
     def incr(self, key: str) -> _FakePipeline:
         self.ops.append(("incr", (key,)))
         return self
 
     def expire(self, key: str, ttl: int) -> _FakePipeline:
         self.ops.append(("expire", (key, ttl)))
+        return self
+
+    def zremrangebyscore(self, key: str, min_score: int, max_score: int) -> _FakePipeline:
+        self.ops.append(("zremrangebyscore", (key, min_score, max_score)))
+        return self
+
+    def zadd(self, key: str, mapping: dict) -> _FakePipeline:
+        self.ops.append(("zadd", (key, mapping)))
+        return self
+
+    def zcard(self, key: str) -> _FakePipeline:
+        self.ops.append(("zcard", (key,)))
         return self
 
     async def execute(self) -> list:
@@ -36,6 +54,12 @@ class _FakePipeline:
                 results.append(await self.client.incr(*args))
             elif op == "expire":
                 results.append(await self.client.expire(*args))
+            elif op == "zremrangebyscore":
+                results.append(await self.client.zremrangebyscore(*args))
+            elif op == "zadd":
+                results.append(await self.client.zadd(*args))
+            elif op == "zcard":
+                results.append(await self.client.zcard(*args))
         self.ops.clear()
         return results
 
@@ -43,6 +67,7 @@ class _FakePipeline:
 class _FakeRedis:
     def __init__(self) -> None:
         self.data: dict[str, int] = {}
+        self.zsets: dict[str, dict[str, float]] = {}
         self.expires_at: dict[str, int] = {}
 
     def pipeline(self, transaction: bool = True) -> _FakePipeline:
@@ -63,17 +88,40 @@ class _FakeRedis:
         self._cleanup()
         return [str(self.data[key]) if key in self.data else None for key in keys]
 
+    async def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int:
+        zset = self.zsets.get(key, {})
+        removed = [m for m, s in zset.items() if min_score <= s <= max_score]
+        for m in removed:
+            zset.pop(m, None)
+        if not zset:
+            self.zsets.pop(key, None)
+        else:
+            self.zsets[key] = zset
+        return len(removed)
+
+    async def zadd(self, key: str, mapping: dict) -> int:
+        zset = self.zsets.setdefault(key, {})
+        new = 0
+        for member, score in mapping.items():
+            if member not in zset:
+                new += 1
+            zset[member] = float(score)
+        return new
+
+    async def zcard(self, key: str) -> int:
+        return len(self.zsets.get(key, {}))
+
     def _cleanup(self) -> None:
         now = self._now()
         expired_keys = [key for key, until in self.expires_at.items() if until <= now]
         for key in expired_keys:
             self.data.pop(key, None)
+            self.zsets.pop(key, None)
             self.expires_at.pop(key, None)
 
     @staticmethod
     def _now() -> int:
         return int(datetime.now(UTC).timestamp())
-
 
 def _build_test_app(
     *,

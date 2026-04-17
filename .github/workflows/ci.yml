@@ -9,10 +9,8 @@ on:
 env:
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # ── Lint + Type Check ────────────────────────────────────────
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -26,65 +24,51 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies
+      - name: Install Python deps
         working-directory: backend
-        run: |
-          pip install -e ".[dev]"
+        run: pip install -e ".[dev]"
 
-        - name: Python dependency vulnerability scan (fail on high)
+      - name: Python vulnerability scan (fail on high)
+        working-directory: backend
         run: |
           pip install pip-audit
           pip-audit --progress-spinner off --format json --output /tmp/pip-audit.json || true
           python - <<'PY'
-          import json
-          import re
-          import sys
-
-          def parse_score(value):
-            if value is None:
+          import json, re, sys
+          def parse_score(v):
+              if v is None: return None
+              if isinstance(v, (int, float)): return float(v)
+              if isinstance(v, str):
+                  m = re.search(r"([0-9]+(?:\.[0-9]+)?)", v)
+                  return float(m.group(1)) if m else None
+              if isinstance(v, dict):
+                  for k in ("score", "cvss", "baseScore", "value"):
+                      s = parse_score(v.get(k))
+                      if s is not None: return s
+              if isinstance(v, list):
+                  for i in v:
+                      s = parse_score(i)
+                      if s is not None: return s
               return None
-            if isinstance(value, (int, float)):
-              return float(value)
-            if isinstance(value, str):
-              match = re.search(r"([0-9]+(?:\.[0-9]+)?)", value)
-              return float(match.group(1)) if match else None
-            if isinstance(value, dict):
-              for key in ("score", "cvss", "baseScore", "value"):
-                score = parse_score(value.get(key))
-                if score is not None:
-                  return score
-            if isinstance(value, list):
-              for item in value:
-                score = parse_score(item)
-                if score is not None:
-                  return score
-            return None
-
-          with open("/tmp/pip-audit.json", "r", encoding="utf-8") as fh:
-            report = json.load(fh)
-
+          with open("/tmp/pip-audit.json") as fh:
+              report = json.load(fh)
           rows = report.get("dependencies", report if isinstance(report, list) else [])
           high = []
           for dep in rows:
-            for vuln in dep.get("vulns", []):
-              score = None
-              for key in ("severity", "cvssv3", "cvss_score", "score"):
-                score = parse_score(vuln.get(key))
-                if score is not None:
-                  break
-              if score is not None and score >= 7.0:
-                high.append((dep.get("name", "unknown"), vuln.get("id", "unknown"), score))
-
+              for vuln in dep.get("vulns", []):
+                  score = None
+                  for key in ("severity", "cvssv3", "cvss_score", "score"):
+                      score = parse_score(vuln.get(key))
+                      if score is not None: break
+                  if score is not None and score >= 7.0:
+                      high.append((dep.get("name", "?"), vuln.get("id", "?"), score))
           if high:
-            print("High severity Python vulnerabilities detected:")
-            for pkg, vuln_id, score in high:
-              print(f"- {pkg}: {vuln_id} (cvss={score})")
-            sys.exit(1)
-
-          print("No high severity Python vulnerabilities detected.")
+              for p, vid, s in high: print(f"- {p}: {vid} (cvss={s})")
+              sys.exit(1)
+          print("No high severity Python vulnerabilities.")
           PY
 
-        - name: Frontend dependency vulnerability scan (fail on high)
+      - name: Frontend vulnerability scan
         working-directory: frontend/web
         run: |
           npm ci
@@ -98,11 +82,10 @@ jobs:
         working-directory: backend
         run: ruff format --check .
 
-      - name: MyPy type check
+      - name: MyPy
         working-directory: backend
         run: mypy app/ --ignore-missing-imports
 
-  # ── Backend Tests ────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest
     needs: lint
@@ -113,39 +96,26 @@ jobs:
           POSTGRES_USER: william
           POSTGRES_PASSWORD: william
           POSTGRES_DB: williamos_test
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U william"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+          --health-interval 10s --health-timeout 5s --health-retries 5
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
+        ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+          --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
+      - name: Install deps
         working-directory: backend
         run: pip install -e ".[dev]"
-
       - name: Create schemas
-        run: |
-          PGPASSWORD=william psql -h localhost -U william -d williamos_test -f scripts/init-schemas.sql
-
+        run: PGPASSWORD=william psql -h localhost -U william -d williamos_test -f scripts/init-schemas.sql
       - name: Run tests
         working-directory: backend
         env:
@@ -153,16 +123,13 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: development
           JWT_SECRET_KEY: test-secret-key-at-least-32-bytes-long
-        run: |
-          pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
-
+        run: pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
           file: backend/coverage.xml
           fail_ci_if_error: false
 
-  # ── Docker Build ─────────────────────────────────────────────
   security-baseline:
     runs-on: ubuntu-latest
     needs: test
@@ -173,77 +140,48 @@ jobs:
           POSTGRES_USER: william
           POSTGRES_PASSWORD: william
           POSTGRES_DB: williamos_security
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U william"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+          --health-interval 10s --health-timeout 5s --health-retries 5
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
+        ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+          --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
+      - name: Install
         working-directory: backend
         run: pip install -e ".[dev]"
-
-      - name: Create schemas
-        run: |
-          PGPASSWORD=william psql -h localhost -U william -d williamos_security -f scripts/init-schemas.sql
-
-      - name: Start API server
+      - name: Schemas
+        run: PGPASSWORD=william psql -h localhost -U william -d williamos_security -f scripts/init-schemas.sql
+      - name: Start API
         env:
           DATABASE_URL: postgresql+asyncpg://william:william@localhost:5432/williamos_security
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: development
           JWT_SECRET_KEY: test-secret-key-at-least-32-bytes-long
-          METRICS_ENABLED: true
         run: |
           cd backend
-          nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/william-api.log 2>&1 &
-          echo $! > /tmp/william-api.pid
-
-      - name: Wait for API readiness
+          nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/api.log 2>&1 &
+          echo $! > /tmp/api.pid
+      - name: Wait for readiness
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
-              echo "API is ready"
-              exit 0
-            fi
+            curl -fsS http://localhost:8000/health >/dev/null 2>&1 && exit 0
             sleep 2
           done
-          echo "API did not become ready in time" >&2
-          cat /tmp/william-api.log || true
-          exit 1
-
-      - name: Run security baseline script
+          cat /tmp/api.log; exit 1
+      - name: Security baseline
         run: bash scripts/security-audit-basics.sh http://localhost:8000
-
-      - name: Stop API server
+      - name: Stop API
         if: always()
-        run: |
-          if [[ -f /tmp/william-api.pid ]]; then
-            kill "$(cat /tmp/william-api.pid)" || true
-          fi
-
-      - name: Show API log on failure
-        if: failure()
-        run: cat /tmp/william-api.log || true
+        run: kill "$(cat /tmp/api.pid)" 2>/dev/null || true
 
   docker:
     runs-on: ubuntu-latest
@@ -251,9 +189,5 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-
       - name: Build backend image
         run: docker build -t william-os-backend:${{ github.sha }} ./backend
-
-      - name: Build check
-        run: docker images william-os-backend

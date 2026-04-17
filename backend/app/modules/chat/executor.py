@@ -7,61 +7,78 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import UTC, date, datetime, time
 from typing import Any
 from uuid import UUID
 
 import structlog
+from app.modules.briefing.service import MorningBriefingService
 from app.modules.chat.prompts import ActionItem, ActionResult
+from app.modules.decisions.schemas import DecisionCreate
+from app.modules.decisions.service import DecisionService
+from app.modules.habits.schemas import HabitCreate
+from app.modules.habits.service import HabitsService
+from app.modules.scheduler.schemas import BlockCreate as ScheduleBlockCreate
+from app.modules.scheduler.schemas import ScheduleGenerateRequest
+from app.modules.scheduler.service import SchedulerService
+from app.modules.sleep.schemas import SleepRecordCreate
+from app.modules.sleep.service import SleepService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
-# Action implementation imports
-from app.modules.habits.service import HabitsService
-from app.modules.scheduler.service import SchedulerService
-from app.modules.sleep.service import SleepService
-from app.modules.medicine.service import MedicineService
-from app.modules.trading.service import TradingService
-from app.modules.decisions.service import DecisionService
-from app.modules.briefing.service import MorningBriefingService
-from app.modules.journal.service import JournalService
 
-from app.modules.habits.schemas import HabitCreate
-from app.modules.scheduler.schemas import BlockCreate as ScheduleBlockCreate
-from app.modules.sleep.schemas import SleepRecordCreate
-from app.modules.decisions.schemas import DecisionCreate
-
-from datetime import date, datetime, time
+def _parse_hhmm(value: str, default: time = time(12, 0)) -> time:
+    """Robust HH:MM parser. Accepts '8', '8:00', '08:00', '08:00:00'; falls back to default."""
+    if not isinstance(value, str) or not value.strip():
+        return default
+    cleaned = value.strip().split()[0]
+    parts = cleaned.split(":")
+    try:
+        hh = int(parts[0])
+        mm = int(parts[1]) if len(parts) > 1 else 0
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            return time(hh, mm)
+    except ValueError:
+        pass
+    return default
 
 
 class ActionParser:
-    action_pattern = re.compile(
-        r"<action>\s*type:\s*(?P<type>\w+)\s*params:\s*(?P<params>\{.*?\})\s*</action>",
+    # Balanced-brace aware extraction: match <action>...</action> then parse JSON body.
+    block_pattern = re.compile(
+        r"<action>(?P<body>.*?)</action>",
         re.DOTALL | re.IGNORECASE,
     )
+    type_pattern = re.compile(r"type:\s*(?P<type>\w+)", re.IGNORECASE)
+    params_pattern = re.compile(r"params:\s*(?P<params>\{.*\})", re.DOTALL)
 
     @classmethod
     def parse_actions(cls, text: str) -> list[ActionItem]:
-        actions = []
-        for match in cls.action_pattern.finditer(text):
+        actions: list[ActionItem] = []
+        for m in cls.block_pattern.finditer(text):
+            body = m.group("body")
+            tm = cls.type_pattern.search(body)
+            pm = cls.params_pattern.search(body)
+            if not tm or not pm:
+                continue
             try:
-                action_type = match.group("type").upper()
-                params_str = match.group("params")
-                params = json.loads(params_str)
-                actions.append(
-                    ActionItem(
-                        type=action_type,
-                        params=params,
-                        original_text=match.group(0),
-                    )
+                params = json.loads(pm.group("params"))
+            except json.JSONDecodeError as e:
+                logger.warning("action_json_parse_error", error=str(e), snippet=body[:200])
+                continue
+            actions.append(
+                ActionItem(
+                    type=tm.group("type").upper(),
+                    params=params,
+                    original_text=m.group(0),
                 )
-            except Exception as e:
-                logger.warning("action_parse_error", error=str(e), match=match.group(0))
+            )
         return actions
 
     @classmethod
     def strip_actions(cls, text: str) -> str:
-        return cls.action_pattern.sub("", text).strip()
+        return cls.block_pattern.sub("", text).strip()
 
 
 class ActionExecutor:
@@ -70,160 +87,156 @@ class ActionExecutor:
         self.user_id = user_id
 
     async def execute(self, action: ActionItem) -> ActionResult:
+        handler = getattr(self, f"_handle_{action.type.lower()}", None)
+        if not handler:
+            return ActionResult(success=False, message=f"Action {action.type} not supported.")
         try:
-            handler = getattr(self, f"_handle_{action.type.lower()}", None)
-            if not handler:
-                logger.warning("action_not_supported", type=action.type)
-                return ActionResult(success=False, message=f"Action {action.type} not supported.")
-            
             return await handler(action.params)
         except Exception as e:
             logger.exception("action_execution_failed", type=action.type, error=str(e))
-            return ActionResult(success=False, message=f"Failed to execute {action.type}: {str(e)}")
+            return ActionResult(success=False, message=f"Failed: {e}")
 
     async def _handle_set_alarm(self, params: dict[str, Any]) -> ActionResult:
+        label = params.get("label") or "Alarm"
+        start = _parse_hhmm(params.get("time", "08:00"), default=time(8, 0))
         scheduler = SchedulerService(self.db)
-        time_str = params.get("time", "08:00")
-        label = params.get("label", "Alarm")
-        
-        # Parse time to estimated minutes from midnight roughly, or better just use a block
-        hh, mm = time_str.split(":")
-        start = time(int(hh), int(mm))
-        
-        today = date.today()
-        # Create a tiny block for the alarm
-        await scheduler.create_block(
+        await scheduler.add_block(
             user_id=self.user_id,
-            plan_date=today,
+            plan_date=date.today(),
             data=ScheduleBlockCreate(
                 title=f"⏰ {label}",
                 category="routine",
                 start_time=start,
-                duration_minutes=5,
+                end_time=time(
+                    (start.hour + (start.minute + 5) // 60) % 24, (start.minute + 5) % 60
+                ),
                 priority=1,
-            )
+                tags=["alarm"],
+            ),
         )
-        return ActionResult(success=True, message=f"✅ Alarm set for {time_str} ({label})")
+        await self.db.commit()
+        return ActionResult(
+            success=True, message=f"✅ Alarm set for {start.strftime('%H:%M')} ({label})"
+        )
 
-    async def _handle_reschedule_block(self, params: dict[str, Any]) -> ActionResult:
-        # In a real impl, we'd look up the block by title and reschedule
-        block_title = params.get("block_title")
-        new_time = params.get("new_time")
-        # For sprint 11 we'll mock the actual move or do a simple reschedule day 
+    async def _handle_set_reminder(self, params: dict[str, Any]) -> ActionResult:
+        msg = params.get("message") or "Reminder"
+        t = _parse_hhmm(params.get("time", "12:00"), default=time(12, 0))
         scheduler = SchedulerService(self.db)
-        await scheduler.reschedule_day(self.user_id, date.today(), reason=f"Moved {block_title} to {new_time}")
-        return ActionResult(success=True, message=f"✅ Rescheduled to accommodate {block_title} at {new_time}")
+        await scheduler.add_block(
+            user_id=self.user_id,
+            plan_date=date.today(),
+            data=ScheduleBlockCreate(
+                title=f"🔔 {msg}",
+                category="routine",
+                start_time=t,
+                end_time=time((t.hour + (t.minute + 5) // 60) % 24, (t.minute + 5) % 60),
+                priority=1,
+                tags=["reminder"],
+            ),
+        )
+        await self.db.commit()
+        return ActionResult(success=True, message=f"✅ Reminder set for {t.strftime('%H:%M')}")
+
+    async def _handle_generate_schedule(self, params: dict[str, Any]) -> ActionResult:
+        scheduler = SchedulerService(self.db)
+        request = ScheduleGenerateRequest(
+            target_date=date.today(),
+            force_regenerate=True,
+            extra_context={"notes": params.get("notes", "")},
+        )
+        await scheduler.generate_daily_plan(self.user_id, request)
+        await self.db.commit()
+        return ActionResult(success=True, message="✅ Schedule regenerated for today")
 
     async def _handle_create_habit(self, params: dict[str, Any]) -> ActionResult:
+        name = params.get("name") or "New Habit"
+        target = params.get("target_time")
+        pref = _parse_hhmm(target, default=time(7, 0)) if target else None
         habits = HabitsService(self.db)
-        name = params.get("name", "New Habit")
-        target_time = params.get("target_time")
-        
-        pref_time = None
-        if target_time:
-            try:
-                hh, mm = target_time.split(":")
-                pref_time = time(int(hh), int(mm))
-            except:
-                pass
-
         await habits.create_habit(
             user_id=self.user_id,
             data=HabitCreate(
                 name=name,
-                preferred_time=pref_time,
+                preferred_time=pref,
                 duration_minutes=15,
-                category="general"
-            )
+                category="general",
+            ),
         )
+        await self.db.commit()
         return ActionResult(success=True, message=f"✅ Habit '{name}' created")
 
     async def _handle_log_sleep(self, params: dict[str, Any]) -> ActionResult:
+        # Best-effort: accept bedtime/wake_time from params if provided, else use today.
+        now = datetime.now(UTC)
+        bedtime = params.get("bedtime")
+        wake = params.get("wake_time")
         sleep = SleepService(self.db)
-        now_utc_naive = datetime.now(UTC).replace(tzinfo=None)
-        # Assuming simple for now
         await sleep.log_sleep(
             user_id=self.user_id,
             data=SleepRecordCreate(
                 sleep_date=date.today(),
-                bedtime=now_utc_naive,  # TODO: parse bedtime/wake_time from action payload.
-                wake_time=now_utc_naive,
-                sleep_quality=7,
-                time_to_fall_asleep_minutes=15,
-            )
+                bedtime=datetime.fromisoformat(bedtime) if bedtime else now,
+                wake_time=datetime.fromisoformat(wake) if wake else now,
+                sleep_quality=int(params.get("sleep_quality", 7)),
+                time_to_fall_asleep_minutes=int(params.get("time_to_fall_asleep_minutes", 15)),
+            ),
         )
+        await self.db.commit()
         return ActionResult(success=True, message="✅ Sleep logged")
 
-    async def _handle_log_medicine(self, params: dict[str, Any]) -> ActionResult:
-        # Simplistic for now - logs all upcoming as taken if no ID provided
-        meds = MedicineService(self.db)
-        upcoming = await meds.get_upcoming_reminders(self.user_id, within_minutes=1440)
-        if not upcoming:
-            return ActionResult(success=False, message="No medicine due today.")
-        first = upcoming[0]
-        # In a full implementation we'd search for medicine ID
-        return ActionResult(success=True, message=f"✅ {first.medicine_name} marked as taken")
-
-    async def _handle_start_pomodoro(self, params: dict[str, Any]) -> ActionResult:
-        duration = params.get("duration_minutes", 25)
-        subject = params.get("subject", "Focus")
-        return ActionResult(
-            success=True, 
-            message=f"✅ Starting {duration}min focus session for {subject}",
-            data={"action": "START_TIMER", "duration": duration, "subject": subject}
-        )
-
-    async def _handle_add_watchlist(self, params: dict[str, Any]) -> ActionResult:
-        trading = TradingService(self.db)
-        symbol = params.get("symbol", "SPY").upper()
-        # Would call trading service logic to add
-        return ActionResult(success=True, message=f"✅ Added {symbol} to watchlist")
-
     async def _handle_create_decision(self, params: dict[str, Any]) -> ActionResult:
+        title = params.get("title") or "New Decision"
+        options = params.get("options") or [{"title": "Option A"}, {"title": "Option B"}]
         decisions = DecisionService(self.db)
-        title = params.get("title", "New Decision")
-        options = params.get("options", [{"title": "Option A"}, {"title": "Option B"}])
         await decisions.create_decision(
             user_id=self.user_id,
             data=DecisionCreate(
                 title=title,
                 decision_type="general",
                 options=options,
-                criteria=[]
-            )
+                criteria=[],
+            ),
         )
+        await self.db.commit()
         return ActionResult(success=True, message=f"✅ Decision '{title}' created")
 
-    async def _handle_generate_schedule(self, params: dict[str, Any]) -> ActionResult:
-        scheduler = SchedulerService(self.db)
-        await scheduler.generate_schedule(self.user_id, date.today(), extra_context=params.get("notes", ""))
-        return ActionResult(success=True, message=f"✅ Schedule regenerated for today")
+    async def _handle_start_pomodoro(self, params: dict[str, Any]) -> ActionResult:
+        duration = int(params.get("duration_minutes", 25))
+        subject = params.get("subject", "Focus")
+        # Client-side timer; no DB write.
+        return ActionResult(
+            success=True,
+            message=f"✅ Starting {duration}min focus session for {subject}",
+            data={"action": "START_TIMER", "duration": duration, "subject": subject},
+        )
 
     async def _handle_send_briefing(self, params: dict[str, Any]) -> ActionResult:
         briefing = MorningBriefingService(self.db)
         await briefing.send_briefing(self.user_id)
+        await self.db.commit()
         return ActionResult(success=True, message="✅ Morning briefing assembled and sent")
 
-    async def _handle_set_reminder(self, params: dict[str, Any]) -> ActionResult:
-        scheduler = SchedulerService(self.db)
-        msg = params.get("message", "Reminder")
-        t = params.get("time", "12:00")
-        hh, mm = t.split(":")
-        await scheduler.create_block(
-            user_id=self.user_id,
-            plan_date=date.today(),
-            data=ScheduleBlockCreate(
-                title=f"🔔 {msg}",
-                category="task",
-                start_time=time(int(hh), int(mm)),
-                duration_minutes=5,
-                priority=1
-            )
+    # ── Not implemented (C7 fix: return success=False honestly) ──
+    async def _handle_log_medicine(self, params: dict[str, Any]) -> ActionResult:
+        return ActionResult(
+            success=False,
+            message="Medicine logging via chat is not wired yet. Use the Medicine page.",
         )
-        return ActionResult(success=True, message=f"✅ Reminder set for {t}")
 
     async def _handle_log_mood(self, params: dict[str, Any]) -> ActionResult:
-        journal = JournalService(self.db)
-        mood = params.get("mood", "okay")
-        # Assuming we just set the mood for today
-        return ActionResult(success=True, message=f"✅ Mood logged as {mood}")
+        return ActionResult(
+            success=False, message="Mood logging via chat is not wired yet. Use the Journal page."
+        )
+
+    async def _handle_add_watchlist(self, params: dict[str, Any]) -> ActionResult:
+        return ActionResult(
+            success=False, message="Watchlist add via chat is not wired yet. Use the Trading page."
+        )
+
+    async def _handle_reschedule_block(self, params: dict[str, Any]) -> ActionResult:
+        # Requires block-ID lookup which the current service doesn't expose by title.
+        return ActionResult(
+            success=False,
+            message="Rescheduling a specific block via chat is not supported. Use /reschedule on the Timeline page.",
+        )

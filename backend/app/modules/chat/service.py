@@ -6,9 +6,9 @@ Handles standard messaging, calling Gemini, parsing actions, and retrieving cont
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 import json
 import re
+from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
 from time import perf_counter
 from typing import Any
@@ -522,12 +522,15 @@ class ChatService:
         started = perf_counter()
         emitted_text = ""
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client, client.stream(
-                "POST",
-                url,
-                headers=headers,
-                json=payload,
-            ) as response:
+            async with (
+                httpx.AsyncClient(timeout=60.0) as client,
+                client.stream(
+                    "POST",
+                    url,
+                    headers=headers,
+                    json=payload,
+                ) as response,
+            ):
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     stripped = (line or "").strip()
@@ -550,7 +553,7 @@ class ChatService:
                         continue
 
                     if chunk_text.startswith(emitted_text):
-                        delta = chunk_text[len(emitted_text):]
+                        delta = chunk_text[len(emitted_text) :]
                         emitted_text = chunk_text
                     else:
                         delta = chunk_text

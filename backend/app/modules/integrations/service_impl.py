@@ -144,10 +144,7 @@ class IntegrationsService:
 
     async def revoke_api_key(self, user_id: uuid.UUID, key_id: uuid.UUID) -> bool:
         result = await self.db.execute(
-            select(ApiKey)
-            .where(ApiKey.user_id == user_id)
-            .where(ApiKey.id == key_id)
-            .limit(1)
+            select(ApiKey).where(ApiKey.user_id == user_id).where(ApiKey.id == key_id).limit(1)
         )
         row = result.scalar_one_or_none()
         if row is None:
@@ -481,7 +478,9 @@ class IntegrationsService:
                 raise ValidationError("journal_content is required")
             if not data.journal_passphrase:
                 raise AuthenticationError("journal_passphrase is required")
-            payload = IntegrationJournalEntryIn(content=data.journal_content, tags=["telegram", "daily"])
+            payload = IntegrationJournalEntryIn(
+                content=data.journal_content, tags=["telegram", "daily"]
+            )
             result = await self.ingest_journal_entry(
                 user_id=user_id,
                 data=payload,
@@ -543,13 +542,20 @@ class IntegrationsService:
             {},
         )
         study = await self._safe_call(StudyService(self.db).get_progress(user_id), [])
-        medicine = await self._safe_call(MedicineService(self.db).get_adherence_stats(user_id, days=30), {})
+        medicine = await self._safe_call(
+            MedicineService(self.db).get_adherence_stats(user_id, days=30), {}
+        )
         life_score = await self._safe_call(LifeScoreService(self.db).get_latest_score(user_id), {})
-        warnings = await self._safe_call(PredictiveWarningService(self.db).get_active_warnings(user_id), [])
+        warnings = await self._safe_call(
+            PredictiveWarningService(self.db).get_active_warnings(user_id), []
+        )
 
         payload = IntegrationDailySummary(
             sleep=sleep.model_dump(mode="json") if hasattr(sleep, "model_dump") else sleep,
-            habits={"active_count": len(habits), "items": [item.model_dump(mode="json") for item in habits]},
+            habits={
+                "active_count": len(habits),
+                "items": [item.model_dump(mode="json") for item in habits],
+            },
             fitness=fitness.model_dump(mode="json") if hasattr(fitness, "model_dump") else fitness,
             study={
                 "subjects": [item.model_dump(mode="json") for item in study],
@@ -559,9 +565,16 @@ class IntegrationsService:
                     if float(item.avg_comprehension) < 6.0
                 ],
             },
-            medicine=medicine.model_dump(mode="json") if hasattr(medicine, "model_dump") else medicine,
-            life_score=life_score.model_dump(mode="json") if hasattr(life_score, "model_dump") else life_score,
-            warnings={"count": len(warnings), "items": [item.model_dump(mode="json") for item in warnings]},
+            medicine=medicine.model_dump(mode="json")
+            if hasattr(medicine, "model_dump")
+            else medicine,
+            life_score=life_score.model_dump(mode="json")
+            if hasattr(life_score, "model_dump")
+            else life_score,
+            warnings={
+                "count": len(warnings),
+                "items": [item.model_dump(mode="json") for item in warnings],
+            },
         )
         return payload.model_dump(mode="json")
 
@@ -596,7 +609,9 @@ class IntegrationsService:
             raise AuthenticationError("Invalid API key")
         api_key.last_used_at = self._utcnow_naive()
         await self.db.flush()
-        return IntegrationAuthMeta(user_id=api_key.user_id, source=api_key.name, token_type="api_key")
+        return IntegrationAuthMeta(
+            user_id=api_key.user_id, source=api_key.name, token_type="api_key"
+        )
 
     @staticmethod
     async def _safe_call(coro, default):

@@ -40,6 +40,7 @@ class NativeEventUpdateRequest(BaseModel):
     description: str | None = None
     location: str | None = None
 
+
 # ── Google ──────────────────────────────────────────────────────
 
 

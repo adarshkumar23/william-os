@@ -18,6 +18,9 @@ yarn-debug.log*
 .next/
 out/
 
+# ── TypeScript build artifacts ──────────────────────────────────
+*.tsbuildinfo
+
 # ── Environment ─────────────────────────────────────────────────
 .env
 .env.local
@@ -53,3 +56,10 @@ logs/
 
 # ── OS ──────────────────────────────────────────────────────────
 Thumbs.db
+
+# ── Stale scratch files (do not commit) ─────────────────────────
+*.bak
+*.tmp
+*.new
+*.patch
+*.orig

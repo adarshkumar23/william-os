@@ -48,7 +48,7 @@ async def test_analyze_decision_mock(db_session: AsyncSession, test_user, monkey
         ),
     )
 
-    async def _fake_ai(_payload: dict):
+    async def _fake_ai(*args, **kwargs):
         from app.modules.decisions.schemas import DecisionAnalysis
 
         return DecisionAnalysis(

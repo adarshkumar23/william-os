@@ -26,6 +26,7 @@ from app.modules.auth.schemas import (
 from app.modules.auth.service import AuthService
 from app.shared.types import success
 from fastapi import APIRouter, Depends, Header, Request, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -60,29 +61,40 @@ async def get_current_user_id(
     db: AsyncSession = Depends(get_db),
 ) -> uuid.UUID:
     """Extract and validate user ID from JWT or permanent API key."""
+    from app.core.security import hash_api_key
+    from app.shared.types import AuthenticationError
+    from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+
     if not authorization.startswith("Bearer "):
-        from app.shared.types import AuthenticationError
         raise AuthenticationError("Invalid authorization header")
     token = authorization[7:].strip()
+
     if token.startswith("wos-"):
         from sqlalchemy import text
+
+        key_hash = hash_api_key(token)
         result = await db.execute(
-            text("SELECT user_id FROM auth.api_keys WHERE key_hash=:key AND is_active=true"),
-            {"key": token}
+            text("SELECT user_id FROM auth.api_keys WHERE key_hash=:kh AND is_active=true"),
+            {"kh": key_hash},
         )
         row = result.fetchone()
         if not row:
-            from app.shared.types import AuthenticationError
             raise AuthenticationError("Invalid API key")
         await db.execute(
-            text("UPDATE auth.api_keys SET last_used=NOW() WHERE key_hash=:key"),
-            {"key": token}
+            text("UPDATE auth.api_keys SET last_used=NOW() WHERE key_hash=:kh"),
+            {"kh": key_hash},
         )
         await db.commit()
         return uuid.UUID(str(row[0]))
-    payload = decode_token(token)
+
+    try:
+        payload = decode_token(token)
+    except ExpiredSignatureError as e:
+        raise AuthenticationError("Token expired") from e
+    except InvalidTokenError as e:
+        raise AuthenticationError("Invalid token") from e
+
     if payload.get("type") != "access":
-        from app.shared.types import AuthenticationError
         raise AuthenticationError("Invalid token type")
     return uuid.UUID(payload["sub"])
 
@@ -106,7 +118,13 @@ async def login(
     ip = request.client.host if request.client else ""
     tokens = await service.login(data, user_agent, ip)
     _set_refresh_cookie(response, tokens.refresh_token)
-    return success(tokens.model_dump())
+    return success(
+        {
+            "access_token": tokens.access_token,
+            "token_type": "bearer",
+            "expires_in": 900,
+        }
+    )
 
 
 @router.post("/refresh")
@@ -287,22 +305,36 @@ async def login_history(
     return success(payload)
 
 
+class ApiKeyCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
 @router.post("/api-keys")
 async def create_api_key(
-    payload: dict,
+    payload: ApiKeyCreate,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     import secrets
+
+    from app.core.security import hash_api_key
     from sqlalchemy import text
-    key = f"wos-{secrets.token_hex(24)}"
-    name = payload.get("name", "API Key")
+
+    raw_key = f"wos-{secrets.token_hex(24)}"
+    key_hash = hash_api_key(raw_key)
+
     await db.execute(
-        text("INSERT INTO auth.api_keys (user_id, key_hash, name) VALUES (:uid, :key, :name)"),
-        {"uid": str(user_id), "key": key, "name": name}
+        text("INSERT INTO auth.api_keys (user_id, key_hash, name) VALUES (:uid, :kh, :name)"),
+        {"uid": str(user_id), "kh": key_hash, "name": payload.name},
     )
     await db.commit()
-    return success({"key": key, "name": name, "note": "Save this key — it won't be shown again"})
+    return success(
+        {
+            "key": raw_key,
+            "name": payload.name,
+            "note": "Save this key — it won't be shown again",
+        }
+    )
 
 
 @router.get("/api-keys")
@@ -311,9 +343,12 @@ async def list_api_keys(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     from sqlalchemy import text
+
     result = await db.execute(
-        text("SELECT id, name, LEFT(key_hash,12) || '...' as key_hint, created_at FROM auth.api_keys WHERE user_id=:uid"),
-        {"uid": str(user_id)}
+        text(
+            "SELECT id, name, LEFT(key_hash, 10) || '...' AS fingerprint, created_at, last_used "
+            "FROM auth.api_keys WHERE user_id=:uid ORDER BY created_at DESC"
+        ),
+        {"uid": str(user_id)},
     )
-    keys = [dict(r._mapping) for r in result.fetchall()]
-    return success(keys)
+    return success([dict(r._mapping) for r in result.fetchall()])

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 def _auth_headers(user_id) -> dict[str, str]:
-    token = create_access_token(user_id)
+    token = create_access_token(user_id, extra_claims={"role": "owner"})
     return {"Authorization": f"Bearer {token}"}
 
 

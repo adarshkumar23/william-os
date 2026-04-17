@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         if not self.cors_origins.strip():
             return ["http://localhost:3000", "http://localhost:5173"]
-        v = self.cors_origins.strip().strip("[]").replace('"', '').replace("'", "")
+        v = self.cors_origins.strip().strip("[]").replace('"', "").replace("'", "")
         return [s.strip() for s in v.split(",") if s.strip()]
 
     @field_validator("encryption_iterations")

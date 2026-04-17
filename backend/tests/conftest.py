@@ -24,26 +24,14 @@ from sqlalchemy.ext.compiler import compiles
 TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
 
 SCHEMA_TRANSLATE_MAP = {
-    "auth": None,
-    "scheduler": None,
-    "audit": None,
-    "habits": None,
-    "journal": None,
-    "medicine": None,
-    "email_intel": None,
-    "fitness": None,
-    "voice": None,
-    "study": None,
-    "trading": None,
-    "sleep": None,
-    "decisions": None,
-    "messaging": None,
-    "intelligence": None,
-    "gamification": None,
-    "memory": None,
-    "agents": None,
-    "rules": None,
-    "security": None,
+    "auth": None, "scheduler": None, "audit": None, "habits": None,
+    "journal": None, "medicine": None, "email_intel": None, "fitness": None,
+    "voice": None, "study": None, "trading": None, "sleep": None,
+    "decisions": None, "messaging": None, "intelligence": None,
+    "gamification": None, "memory": None, "agents": None, "rules": None,
+    "security": None, "briefing": None, "chat": None, "calendar": None,
+    "feed": None, "experiments": None, "export": None, "integrations": None,
+    "secrets": None,
 }
 
 

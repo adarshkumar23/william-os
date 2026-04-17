@@ -1063,7 +1063,9 @@ def calendar_sync_task():
                         removed=sync_result.get("removed", 0),
                     )
                 except Exception as exc:
-                    logger.warning("calendar_sync_user_failed", user_id=str(user.id), error=str(exc))
+                    logger.warning(
+                        "calendar_sync_user_failed", user_id=str(user.id), error=str(exc)
+                    )
 
             await db.commit()
 
@@ -1199,9 +1201,7 @@ def deliver_webhook(self, delivery_id: str):
 
         async with async_session_factory() as db:
             result = await db.execute(
-                select(WebhookDelivery)
-                .where(WebhookDelivery.id == uuid.UUID(delivery_id))
-                .limit(1)
+                select(WebhookDelivery).where(WebhookDelivery.id == uuid.UUID(delivery_id)).limit(1)
             )
             delivery = result.scalar_one_or_none()
             if delivery is None:
@@ -1264,7 +1264,9 @@ def deliver_webhook(self, delivery_id: str):
                 backoff = [30, 120, 600][delivery.attempts - 1]
                 delivery.status = "pending"
                 delivery.error_message = str(exc)
-                delivery.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=backoff)
+                delivery.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(
+                    seconds=backoff
+                )
                 await db.commit()
                 logger.warning(
                     "webhook_delivery_retry_scheduled",
