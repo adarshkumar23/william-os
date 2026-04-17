@@ -9,11 +9,12 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from app.core.database import Base
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
 
 
 class UserRole(str, Enum):

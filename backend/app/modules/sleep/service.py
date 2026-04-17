@@ -12,6 +12,9 @@ from time import perf_counter
 
 import httpx
 import structlog
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call
@@ -27,8 +30,6 @@ from app.modules.sleep.schemas import (
     SleepStats,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

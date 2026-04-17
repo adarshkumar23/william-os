@@ -7,11 +7,12 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
+from fastapi import APIRouter, Depends
+
 from app.core.config import get_settings
 from app.core.experiments import get_assignments
 from app.modules.auth.routes import get_current_user_id
 from app.shared.types import success
-from fastapi import APIRouter, Depends
 
 router = APIRouter(prefix="/experiments", tags=["Experiments"])
 UserIdDep = Annotated[uuid.UUID, Depends(get_current_user_id)]

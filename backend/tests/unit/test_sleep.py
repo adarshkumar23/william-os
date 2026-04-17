@@ -6,11 +6,15 @@ Unit tests for sleep logging, debt, stats, and recommendations.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.modules.sleep.schemas import SleepRecordCreate
 from app.modules.sleep.service import SleepService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 import structlog
 
@@ -74,7 +75,7 @@ class Event:
     data: dict[str, Any]
     user_id: uuid.UUID | None = None
     event_id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 # Type alias for event handlers

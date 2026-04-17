@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
-import uuid
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
 import structlog
+from sqlalchemy import desc, func, select
+
 from app.core.config import get_settings
 from app.modules.auth.models import User
 from app.modules.decisions.models import Decision
@@ -19,13 +22,14 @@ from app.modules.medicine.models import Medicine, MedicineLog
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
 from app.modules.scheduler.models import BlockCategory, BlockStatus, DailyPlan, ScheduleBlock
-from app.modules.scheduler.schemas import RescheduleRequest
-from app.modules.scheduler.schemas import ScheduleGenerateRequest
+from app.modules.scheduler.schemas import RescheduleRequest, ScheduleGenerateRequest
 from app.modules.scheduler.service import SchedulerService
 from app.modules.sleep.models import SleepDebt, SleepRecord
 from app.modules.study.models import MockTest, StudySession, Subject
 from app.modules.trading.models import PortfolioSnapshot, TradeLog
-from sqlalchemy import desc, func, select
+
+if TYPE_CHECKING:
+    import uuid
 
 logger = structlog.get_logger(__name__)
 
@@ -195,13 +199,11 @@ class PredictiveWarningService:
         plan = plan_result.scalar_one_or_none()
 
         if plan is None:
-            try:
+            with contextlib.suppress(Exception):
                 await self.scheduler.generate_daily_plan(
                     user_id=user_id,
                     request=ScheduleGenerateRequest(target_date=tomorrow),
                 )
-            except Exception:
-                pass
             plan_result = await self.db.execute(
                 select(DailyPlan)
                 .where(DailyPlan.user_id == user_id)
@@ -242,9 +244,7 @@ class PredictiveWarningService:
                 journal_prompt_block = ScheduleBlock(
                     plan_id=plan.id,
                     title="Recovery Journal Prompt",
-                    description=(
-                        "How are you really feeling? William noticed signs of burnout."
-                    ),
+                    description=("How are you really feeling? William noticed signs of burnout."),
                     category=BlockCategory.PERSONAL,
                     start_time=__import__("datetime").time(hour=20, minute=30),
                     end_time=__import__("datetime").time(hour=20, minute=45),
@@ -346,7 +346,9 @@ class PredictiveWarningService:
         warning_type: str,
         details: dict,
     ) -> PredictiveWarningResponse:
-        explanation, severity, recommended_action = self._compose_warning_payload(warning_type, details)
+        explanation, severity, recommended_action = self._compose_warning_payload(
+            warning_type, details
+        )
 
         existing_result = await self.db.execute(
             select(PredictiveWarning)
@@ -382,7 +384,9 @@ class PredictiveWarningService:
         await self.db.refresh(row)
         return PredictiveWarningResponse.model_validate(row)
 
-    async def trigger_response(self, user_id: uuid.UUID, warning: PredictiveWarningResponse) -> dict:
+    async def trigger_response(
+        self, user_id: uuid.UUID, warning: PredictiveWarningResponse
+    ) -> dict:
         actions: list[str] = []
 
         payload = NotificationPayload(
@@ -411,7 +415,12 @@ class PredictiveWarningService:
                 )
                 actions.append("schedule_reduced")
             except Exception as exc:
-                logger.warning("warning_schedule_adjustment_failed", user_id=str(user_id), warning_type=warning.warning_type, error=str(exc))
+                logger.warning(
+                    "warning_schedule_adjustment_failed",
+                    user_id=str(user_id),
+                    warning_type=warning.warning_type,
+                    error=str(exc),
+                )
 
         return {"actions": actions}
 
@@ -425,12 +434,9 @@ class PredictiveWarningService:
             "warning_type": "burnout_risk",
             "severity": severity,
             "explanation": (
-                f"Burnout risk score: {score:.0f}/100. "
-                f"{self._burnout_explanation(signals)}"
+                f"Burnout risk score: {score:.0f}/100. {self._burnout_explanation(signals)}"
             ),
-            "recommended_action": (
-                "Schedule a recovery day. Reduce tomorrow's workload by 50%."
-            ),
+            "recommended_action": ("Schedule a recovery day. Reduce tomorrow's workload by 50%."),
             "details": {"score": round(score, 2), "signals": signals},
         }
 
@@ -689,7 +695,10 @@ class PredictiveWarningService:
         down = bool(latest and latest.total_pnl < 0)
 
         if trades_24h > 5 and down:
-            return {"trades_24h": trades_24h, "portfolio_total_pnl": float(latest.total_pnl) if latest else 0.0}
+            return {
+                "trades_24h": trades_24h,
+                "portfolio_total_pnl": float(latest.total_pnl) if latest else 0.0,
+            }
         return None
 
     async def _detect_deadline_collision(self, user_id: uuid.UUID) -> dict | None:
@@ -713,7 +722,11 @@ class PredictiveWarningService:
 
         major_due = decisions_due + mocks_due
         if major_due >= 2:
-            return {"major_items_due_48h": major_due, "decision_deadlines": decisions_due, "mock_tests": mocks_due}
+            return {
+                "major_items_due_48h": major_due,
+                "decision_deadlines": decisions_due,
+                "mock_tests": mocks_due,
+            }
         return None
 
     @staticmethod
@@ -792,9 +805,7 @@ class PredictiveWarningService:
     def _burnout_explanation(signals: dict[str, object]) -> str:
         segments: list[str] = []
         if float(signals.get("sleep_points", 0.0)) > 0:
-            segments.append(
-                f"Sleep debt is {float(signals.get('sleep_debt_hours', 0.0)):.1f}h"
-            )
+            segments.append(f"Sleep debt is {float(signals.get('sleep_debt_hours', 0.0)):.1f}h")
         if float(signals.get("habit_points", 0.0)) > 0:
             segments.append(
                 f"habit completion dropped {float(signals.get('habit_decline_pct', 0.0)):.0f}%"
@@ -844,7 +855,7 @@ class PredictiveWarningService:
             .where(HabitCheckIn.skipped.is_(False))
         )
         completed = int(completed_result.scalar() or 0)
-        days = ((end - start).days + 1)
+        days = (end - start).days + 1
         denom = max(1, habits_count * days)
         return round((completed / denom) * 100.0, 2)
 

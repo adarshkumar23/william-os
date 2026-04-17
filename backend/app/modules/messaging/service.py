@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 import structlog
+from sqlalchemy import and_, select
+
 from app.core.config import get_settings
 from app.core.metrics import increment_notification_delivery
 from app.modules.messaging.models import NotificationLog, TelegramUser
@@ -18,7 +20,6 @@ from app.modules.messaging.schemas import (
     NotificationPayload,
     TelegramLinkResponse,
 )
-from sqlalchemy import and_, select
 
 if TYPE_CHECKING:
     from uuid import UUID

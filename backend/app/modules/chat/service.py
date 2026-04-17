@@ -6,17 +6,18 @@ Handles standard messaging, calling Gemini, parsing actions, and retrieving cont
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 import json
 import re
 from datetime import UTC, date, datetime
 from time import perf_counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
+from sqlalchemy import desc, select
+
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
 from app.modules.auth.service import AuthService
@@ -37,8 +38,11 @@ from app.modules.sleep.models import SleepRecord
 from app.modules.sleep.service import SleepService
 from app.modules.study.service import StudyService
 from app.modules.trading.service import TradingService
-from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 ACTION_TAG_PATTERN = re.compile(r"<action>\s*(.*?)\s*</action>", re.DOTALL)
@@ -472,7 +476,16 @@ class ChatService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
-                raw = response.json()
+                # H14: guard against HTML error pages returning non-JSON with 200 status
+                try:
+                    raw = response.json()
+                except Exception:
+                    logger.error(
+                        "chat_gemini_response_not_json",
+                        status=response.status_code,
+                        preview=response.text[:200],
+                    )
+                    return "I am having trouble connecting to my neural core right now."
             observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
             if "candidates" in raw and len(raw["candidates"]) > 0:
                 parts = raw["candidates"][0]["content"]["parts"]
@@ -522,12 +535,15 @@ class ChatService:
         started = perf_counter()
         emitted_text = ""
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client, client.stream(
-                "POST",
-                url,
-                headers=headers,
-                json=payload,
-            ) as response:
+            async with (
+                httpx.AsyncClient(timeout=60.0) as client,
+                client.stream(
+                    "POST",
+                    url,
+                    headers=headers,
+                    json=payload,
+                ) as response,
+            ):
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     stripped = (line or "").strip()
@@ -550,10 +566,12 @@ class ChatService:
                         continue
 
                     if chunk_text.startswith(emitted_text):
-                        delta = chunk_text[len(emitted_text):]
+                        delta = chunk_text[len(emitted_text) :]
                         emitted_text = chunk_text
                     else:
+                        # M20: non-prefix chunk — emit as delta and reset tracker
                         delta = chunk_text
+                        emitted_text = chunk_text
                         emitted_text += delta
 
                     if delta:

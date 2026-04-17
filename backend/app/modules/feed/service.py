@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy import desc, func, select
+
 from app.modules.decisions.models import Decision
 from app.modules.feed.schemas import ActivityFeedItem
 from app.modules.fitness.models import WorkoutLog
@@ -23,7 +25,6 @@ from app.modules.sleep.models import SleepRecord
 from app.modules.study.models import StudySession, Subject
 from app.modules.trading.models import TradeLog
 from app.shared.types import CursorPage, ValidationError
-from sqlalchemy import desc, func, select
 
 if TYPE_CHECKING:
     import uuid
@@ -59,27 +60,15 @@ class ActivityFeedService:
         cursor = self._decode_cursor(before_cursor) if before_cursor else None
 
         rows: list[_FeedRow] = []
-        rows.extend(
-            await self._habit_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
-        )
-        rows.extend(
-            await self._journal_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
-        )
-        rows.extend(
-            await self._sleep_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
-        )
+        rows.extend(await self._habit_events(user_id=user_id, overfetch=overfetch, cursor=cursor))
+        rows.extend(await self._journal_events(user_id=user_id, overfetch=overfetch, cursor=cursor))
+        rows.extend(await self._sleep_events(user_id=user_id, overfetch=overfetch, cursor=cursor))
         rows.extend(
             await self._medicine_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
         )
-        rows.extend(
-            await self._trade_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
-        )
-        rows.extend(
-            await self._workout_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
-        )
-        rows.extend(
-            await self._study_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
-        )
+        rows.extend(await self._trade_events(user_id=user_id, overfetch=overfetch, cursor=cursor))
+        rows.extend(await self._workout_events(user_id=user_id, overfetch=overfetch, cursor=cursor))
+        rows.extend(await self._study_events(user_id=user_id, overfetch=overfetch, cursor=cursor))
         rows.extend(
             await self._decision_events(user_id=user_id, overfetch=overfetch, cursor=cursor)
         )
@@ -91,9 +80,7 @@ class ActivityFeedService:
         rows.sort(key=lambda row: (row.timestamp, row.key), reverse=True)
         if cursor:
             rows = [
-                row
-                for row in rows
-                if (row.timestamp, row.key) < (cursor.timestamp, cursor.key)
+                row for row in rows if (row.timestamp, row.key) < (cursor.timestamp, cursor.key)
             ]
 
         has_more = len(rows) > page_size
@@ -159,9 +146,8 @@ class ActivityFeedService:
         overfetch: int,
         cursor: _FeedCursor | None,
     ) -> list[_FeedRow]:
-        query = (
-            select(JournalEntry.id, JournalEntry.created_at, JournalEntry.word_count)
-            .where(JournalEntry.user_id == user_id)
+        query = select(JournalEntry.id, JournalEntry.created_at, JournalEntry.word_count).where(
+            JournalEntry.user_id == user_id
         )
         if cursor:
             query = query.where(JournalEntry.created_at <= cursor.timestamp)
@@ -198,10 +184,9 @@ class ActivityFeedService:
         overfetch: int,
         cursor: _FeedCursor | None,
     ) -> list[_FeedRow]:
-        query = (
-            select(SleepRecord.id, SleepRecord.created_at, SleepRecord.sleep_duration_minutes)
-            .where(SleepRecord.user_id == user_id)
-        )
+        query = select(
+            SleepRecord.id, SleepRecord.created_at, SleepRecord.sleep_duration_minutes
+        ).where(SleepRecord.user_id == user_id)
         if cursor:
             query = query.where(SleepRecord.created_at <= cursor.timestamp)
 
@@ -345,15 +330,12 @@ class ActivityFeedService:
         overfetch: int,
         cursor: _FeedCursor | None,
     ) -> list[_FeedRow]:
-        query = (
-            select(
-                WorkoutLog.id,
-                WorkoutLog.created_at,
-                WorkoutLog.workout_type,
-                WorkoutLog.duration_minutes,
-            )
-            .where(WorkoutLog.user_id == user_id)
-        )
+        query = select(
+            WorkoutLog.id,
+            WorkoutLog.created_at,
+            WorkoutLog.workout_type,
+            WorkoutLog.duration_minutes,
+        ).where(WorkoutLog.user_id == user_id)
         if cursor:
             query = query.where(WorkoutLog.created_at <= cursor.timestamp)
 
@@ -479,16 +461,13 @@ class ActivityFeedService:
         overfetch: int,
         cursor: _FeedCursor | None,
     ) -> list[_FeedRow]:
-        query = (
-            select(
-                XPEvent.id,
-                XPEvent.earned_at,
-                XPEvent.source_module,
-                XPEvent.action,
-                XPEvent.xp_earned,
-            )
-            .where(XPEvent.user_id == user_id)
-        )
+        query = select(
+            XPEvent.id,
+            XPEvent.earned_at,
+            XPEvent.source_module,
+            XPEvent.action,
+            XPEvent.xp_earned,
+        ).where(XPEvent.user_id == user_id)
         if cursor:
             query = query.where(XPEvent.earned_at <= cursor.timestamp)
 
@@ -525,10 +504,7 @@ class ActivityFeedService:
         overfetch: int,
         cursor: _FeedCursor | None,
     ) -> list[_FeedRow]:
-        query = (
-            select(LifeScore)
-            .where(LifeScore.user_id == user_id)
-        )
+        query = select(LifeScore).where(LifeScore.user_id == user_id)
         if cursor:
             query = query.where(LifeScore.computed_at <= cursor.timestamp)
 
@@ -556,8 +532,7 @@ class ActivityFeedService:
                         module="intelligence",
                         action="life_score_changed",
                         summary=(
-                            f"Life score updated to {float(score_row.score):.1f} "
-                            f"({delta_text})"
+                            f"Life score updated to {float(score_row.score):.1f} ({delta_text})"
                         ),
                         icon_key="life_score_changed",
                     ),
@@ -575,10 +550,7 @@ class ActivityFeedService:
 
     @staticmethod
     def _encode_cursor(timestamp: datetime, key: str) -> str:
-        if timestamp.tzinfo is None:
-            ts = timestamp
-        else:
-            ts = timestamp.astimezone(UTC)
+        ts = timestamp if timestamp.tzinfo is None else timestamp.astimezone(UTC)
         payload = {
             "t": ts.isoformat(),
             "k": key,

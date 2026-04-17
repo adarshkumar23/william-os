@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+
 from app.modules.gamification.service import GamificationService
 
 

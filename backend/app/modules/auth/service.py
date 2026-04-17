@@ -9,13 +9,17 @@ import base64
 import io
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import httpx
 import pyotp
 import qrcode
 import structlog
-from app.core.email import send_invite_email
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+
 from app.core.config import get_settings
+from app.core.email import send_invite_email
 from app.core.events import Event, EventType, event_bus
 from app.core.permissions import default_scopes_for_role
 from app.core.security import (
@@ -27,8 +31,7 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
-from app.modules.auth.models import LoginHistory, RefreshTokenBlacklist, User, UserDevice
-from app.modules.auth.models import UserRole
+from app.modules.auth.models import LoginHistory, RefreshTokenBlacklist, User, UserDevice, UserRole
 from app.modules.auth.schemas import (
     AdminStatsResponse,
     AdminUserResponse,
@@ -45,9 +48,9 @@ from app.modules.auth.schemas import (
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
 from app.shared.types import AuthenticationError, NotFoundError, ValidationError
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -399,7 +402,9 @@ class AuthService:
         # Send invite email
         try:
             owner = await self._get_user_by_id(owner_user_id)
-            owner_name = (owner.display_name or owner.full_name or owner.username) if owner else "William OS"
+            owner_name = (
+                (owner.display_name or owner.full_name or owner.username) if owner else "William OS"
+            )
             await send_invite_email(str(data.email), invite_link, data.role, owner_name)
         except Exception as e:
             logger.warning("invite_email_failed", error=str(e))

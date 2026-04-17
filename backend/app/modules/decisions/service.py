@@ -13,10 +13,12 @@ from time import perf_counter
 
 import httpx
 import structlog
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call
-from app.modules.memory.service import MemoryService
 from app.modules.decisions.models import Decision, DecisionTemplate
 from app.modules.decisions.schemas import (
     DecisionAnalysis,
@@ -26,9 +28,8 @@ from app.modules.decisions.schemas import (
     DecisionResponse,
     DecisionStats,
 )
+from app.modules.memory.service import MemoryService
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -174,7 +175,12 @@ class DecisionService:
         for item in decisions:
             by_type[item.decision_type] += 1
             if item.chosen_at:
-                decided_deltas.append((item.chosen_at.replace(tzinfo=None) - item.created_at.replace(tzinfo=None)).total_seconds() / 3600.0)
+                decided_deltas.append(
+                    (
+                        item.chosen_at.replace(tzinfo=None) - item.created_at.replace(tzinfo=None)
+                    ).total_seconds()
+                    / 3600.0
+                )
             if item.outcome_rating is not None:
                 ratings.append(float(item.outcome_rating))
             if item.ai_scores and item.chosen_option:

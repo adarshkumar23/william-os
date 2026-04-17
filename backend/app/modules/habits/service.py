@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
+
 from app.core.events import Event, EventType, event_bus
 from app.modules.habits.models import (
     Habit,
@@ -25,9 +29,9 @@ from app.modules.habits.schemas import (
     ProcrastinationSignalResponse,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 
@@ -117,6 +121,22 @@ class HabitsService:
         else:
             check_in = HabitCheckIn(habit_id=habit.id, **payload)
             self.db.add(check_in)
+            # M13/H12: concurrent requests may both see no row; dedup on unique constraint
+            try:
+                await self.db.flush()
+            except IntegrityError:
+                await self.db.rollback()
+                existing_result = await self.db.execute(
+                    select(HabitCheckIn).where(
+                        and_(
+                            HabitCheckIn.habit_id == habit.id,
+                            HabitCheckIn.check_date == data.check_date,
+                        )
+                    )
+                )
+                check_in = existing_result.scalar_one()
+                for field, value in payload.items():
+                    setattr(check_in, field, value)
 
         await self._recalculate_habit_stats(
             habit,

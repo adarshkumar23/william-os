@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 
-from app.core.database import Base
 from sqlalchemy import Column, DateTime, Integer, String, Text
+
+from app.core.database import Base
 
 
 def _utcnow_naive() -> datetime:

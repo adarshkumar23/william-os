@@ -8,8 +8,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
 
-from app.modules.medicine.models import MedicineType
 from pydantic import BaseModel, Field, model_validator
+
+from app.modules.medicine.models import MedicineType
 
 
 class MedicineCreate(BaseModel):

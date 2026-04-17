@@ -12,10 +12,19 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import structlog
+from sqlalchemy import and_, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.memory.service import MemoryService
-from app.modules.study.models import MockTest, RevisionCard, StudyFocusSession, StudySession, Subject
+from app.modules.study.models import (
+    MockTest,
+    RevisionCard,
+    StudyFocusSession,
+    StudySession,
+    Subject,
+)
 from app.modules.study.schemas import (
     FocusSessionCompleteRequest,
     FocusSessionResponse,
@@ -36,8 +45,6 @@ from app.modules.study.schemas import (
     SubjectUpdate,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -241,7 +248,7 @@ class StudyService:
             elif old_repetitions == 1:
                 new_interval = 6
             else:
-                new_interval = max(1, int(round(old_interval * new_ease)))
+                new_interval = max(1, round(old_interval * new_ease))
 
         today = date.today()
         card.repetitions = new_repetitions
@@ -460,9 +467,7 @@ class StudyService:
             study_agg_result,
             mock_rows_result,
         ) = await asyncio.gather(
-            self.db.execute(
-                select(func.count(Subject.id)).where(Subject.user_id == user_id)
-            ),
+            self.db.execute(select(func.count(Subject.id)).where(Subject.user_id == user_id)),
             self.db.execute(
                 select(func.count(RevisionCard.id))
                 .where(RevisionCard.user_id == user_id)

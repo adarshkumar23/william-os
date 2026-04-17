@@ -10,9 +10,13 @@ import json
 import time as time_module
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
+from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.memory.service import MemoryService
@@ -32,9 +36,9 @@ from app.modules.scheduler.schemas import (
     ScheduleGenerateRequest,
 )
 from app.shared.types import NotFoundError, ValidationError
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 SCHEDULE_GENERATION_PROMPT = """You are WILLIAM OS, a personal AI operating system.
@@ -128,7 +132,7 @@ class SchedulerService:
             existing.status = PlanStatus.ARCHIVED
             await self.db.flush()
 
-        # Create new plan
+        # Create new plan — catch race-condition duplicate (H12)
         plan = DailyPlan(
             user_id=user_id,
             plan_date=request.target_date,
@@ -139,11 +143,20 @@ class SchedulerService:
             context_snapshot=context,
         )
         self.db.add(plan)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError:
+            await self.db.rollback()
+            logger.warning(
+                "schedule_generate_dedup",
+                user_id=str(user_id),
+                date=str(request.target_date),
+            )
+            return await self.get_plan(user_id, request.target_date)
 
         # Create blocks from AI response
         for block_data in ai_blocks:
-            block = self._parse_ai_block(block_data, plan.id)
+            block = self._parse_ai_block(block_data, plan.id, plan.plan_date)
             self.db.add(block)
 
         # Also add any user-defined fixed blocks
@@ -310,7 +323,7 @@ class SchedulerService:
 
         # Add new blocks
         for block_data in new_blocks:
-            new_block = self._parse_ai_block(block_data, plan.id)
+            new_block = self._parse_ai_block(block_data, plan.id, plan_date)
             self.db.add(new_block)
 
         # Log reschedule event
@@ -575,12 +588,15 @@ class SchedulerService:
             }
             for b in plan.blocks
         ]
+        # M18: truncate + strip user prose to prevent prompt injection
+        _reason = (request.reason or "")[:500].replace("\n", " ").replace("\r", "")
+
         return f"""Reschedule the following daily plan.
 
 CURRENT SCHEDULE:
 {json.dumps(current, indent=2)}
 
-REASON FOR RESCHEDULE: {request.reason}
+REASON FOR RESCHEDULE: {_reason}
 
 CONSTRAINTS: {json.dumps(request.new_constraints, indent=2)}
 
@@ -619,7 +635,16 @@ Optimize remaining time. Respond with ONLY a JSON array of the NEW blocks
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
-                data = resp.json()
+                # H14: guard against HTML error pages that return 200 with non-JSON body
+                try:
+                    data = resp.json()
+                except Exception:
+                    logger.error(
+                        "gemini_response_not_json",
+                        status=resp.status_code,
+                        preview=resp.text[:200],
+                    )
+                    return self._fallback_schedule()
 
             text = data["candidates"][0]["content"]["parts"][0]["text"]
             blocks = json.loads(text)
@@ -734,21 +759,30 @@ Optimize remaining time. Respond with ONLY a JSON array of the NEW blocks
             },
         ]
 
-    def _parse_ai_block(self, data: dict, plan_id: uuid.UUID) -> ScheduleBlock:
+    def _parse_ai_block(self, data: dict, plan_id: uuid.UUID, plan_date: date) -> ScheduleBlock:
         """Convert AI response dict into a ScheduleBlock model."""
         start = time.fromisoformat(data["start_time"])
         end = time.fromisoformat(data["end_time"])
-        start_dt = datetime.combine(date.today(), start)
-        end_dt = datetime.combine(date.today(), end)
+        # H7: use plan_date, not date.today(), so overnight duration is correct for any timezone
+        start_dt = datetime.combine(plan_date, start)
+        end_dt = datetime.combine(plan_date, end)
         if end_dt <= start_dt:
             end_dt += timedelta(days=1)  # handle overnight blocks like sleep
         duration = int((end_dt - start_dt).total_seconds() / 60)
+
+        # H6: guard against unknown category strings from Gemini
+        _cat = data.get("category", "buffer")
+        try:
+            category = BlockCategory(_cat)
+        except ValueError:
+            logger.warning("scheduler_unknown_category", category=_cat)
+            category = BlockCategory("buffer")
 
         return ScheduleBlock(
             plan_id=plan_id,
             title=data.get("title", "Untitled"),
             description=data.get("description"),
-            category=BlockCategory(data.get("category", "buffer")),
+            category=category,
             start_time=start,
             end_time=end,
             duration_minutes=duration,

@@ -72,32 +72,20 @@ import {
 } from "../types/api";
 import { recordApiError, recordRefreshTokenFailure } from "../observability/client";
 
-const ACCESS_KEY = "william_access_token";
-const REFRESH_KEY = "william_refresh_token";
+// C10 fix: access token in memory only; refresh token lives in httpOnly cookie.
+let _accessToken: string | null = null;
 
-const resolveApiBaseUrl = () => {
-  return "/api/v1";
-};
-
-const baseURL = resolveApiBaseUrl();
-
-export const getAccessToken = () => localStorage.getItem(ACCESS_KEY);
-export const getRefreshToken = () => localStorage.getItem(REFRESH_KEY);
+export const getAccessToken = () => _accessToken;
 
 export const saveTokens = (tokens: Partial<AuthTokens>) => {
   if (tokens.access_token) {
-    localStorage.setItem(ACCESS_KEY, tokens.access_token);
-  }
-  if (tokens.refresh_token) {
-    localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
+    _accessToken = tokens.access_token;
   }
 };
 
 export const clearAuthStorage = () => {
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  _accessToken = null;
 };
-
 const apiClient = axios.create({
   baseURL,
   withCredentials: true,
@@ -119,18 +107,19 @@ const flushQueue = (token: string | null) => {
 };
 
 const refreshAccessToken = async (): Promise<string | null> => {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    return null;
-  }
-
   try {
-    const response = await refreshClient.post<ApiEnvelope<AuthTokens>>("/auth/refresh", {
-      refresh_token: refreshToken,
-    });
+    const response = await refreshClient.post<ApiEnvelope<AuthTokens>>("/auth/refresh", {});
     if (!response.data.ok) {
       return null;
     }
+    const tokens = response.data.data;
+    saveTokens(tokens);
+    return tokens.access_token;
+  } catch {
+    recordRefreshTokenFailure(window.location.pathname);
+    return null;
+  }
+};
 
     const tokens = response.data.data;
     saveTokens(tokens);

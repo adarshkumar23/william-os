@@ -6,16 +6,18 @@ Subscribes to ALL events and persists them as immutable audit logs.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
 from app.core.events import Event, EventType, event_bus
 from app.modules.audit.models import AuditAction, AuditLog
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 # Map event types to audit actions
@@ -29,6 +31,8 @@ EVENT_TO_ACTION: dict[EventType, AuditAction] = {
     EventType.JOURNAL_ENTRY_CREATED: AuditAction.JOURNAL_CREATE,
     EventType.MEDICINE_TAKEN: AuditAction.MEDICINE_TAKEN,
     EventType.MEDICINE_MISSED: AuditAction.MEDICINE_MISSED,
+    # M16: chat executor actions flow through INTEGRATION_TRIGGERED
+    EventType.INTEGRATION_TRIGGERED: AuditAction.AI_CALL,
 }
 
 
@@ -36,14 +40,9 @@ async def audit_event_handler(event: Event) -> None:
     """Global event handler — logs every event to audit trail."""
     action = EVENT_TO_ACTION.get(event.type)
     if not action:
-        # Log as AI_CALL or generic based on type
-        action_str = event.type.value.replace(".", "_").upper()
-        try:
-            action = AuditAction(event.type.value)
-        except ValueError:
-            # Not a mapped action — still log the raw event
-            logger.debug("audit_unmapped_event", event_type=event.type.value)
-            return
+        # H15: removed dead code; skip cleanly for unmapped events
+        logger.debug("audit_unmapped_event", event_type=event.type.value)
+        return
 
     try:
         async with async_session_factory() as session:
@@ -88,9 +87,13 @@ class AuditService:
         if module_filter:
             query = query.where(AuditLog.module == module_filter)
         if date_from:
-            query = query.where(AuditLog.created_at >= datetime.combine(date_from, datetime.min.time()))
+            query = query.where(
+                AuditLog.created_at >= datetime.combine(date_from, datetime.min.time())
+            )
         if date_to:
-            query = query.where(AuditLog.created_at <= datetime.combine(date_to, datetime.max.time()))
+            query = query.where(
+                AuditLog.created_at <= datetime.combine(date_to, datetime.max.time())
+            )
 
         query = query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
         result = await self.db.execute(query)
@@ -109,7 +112,9 @@ class AuditService:
 
     async def get_stats(self, user_id: uuid.UUID, days: int = 30) -> dict:
         """Aggregate audit stats for dashboard."""
-        cutoff = datetime.now().replace(hour=0, minute=0, second=0) - __import__("datetime").timedelta(days=days)
+        cutoff = datetime.now(UTC).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+        ) - timedelta(days=days)
         result = await self.db.execute(
             select(AuditLog.action, func.count())
             .where(and_(AuditLog.user_id == user_id, AuditLog.created_at >= cutoff))

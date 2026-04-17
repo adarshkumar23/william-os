@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import uuid
 
+from fastapi import APIRouter, Depends, Header, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.integrations.schemas import (
@@ -26,8 +29,6 @@ from app.modules.integrations.schemas import (
 )
 from app.modules.integrations.service import IntegrationsService
 from app.shared.types import AuthenticationError, success
-from fastapi import APIRouter, Depends, Header, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/integrations", tags=["Integrations"])
 

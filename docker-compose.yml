@@ -1,7 +1,4 @@
-version: "3.9"
-
 services:
-  # ── PostgreSQL ───────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: william-postgres
@@ -21,7 +18,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── Redis ────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: william-redis
@@ -37,7 +33,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── Backend API ──────────────────────────────────────────────
   backend:
     build:
       context: ./backend
@@ -48,7 +43,6 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://william:william@postgres:5432/williamos
       - REDIS_URL=redis://redis:6379/0
-      - CORS_ORIGINS=http://80.225.215.117:3000,http://localhost:3000
     env_file:
       - .env
     depends_on:
@@ -57,11 +51,10 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend/app:/app/app  # Hot reload in dev
+      - ./backend/app:/app/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
 
-  # ── Frontend Web Shell ───────────────────────────────────────
   frontend:
     build:
       context: ./frontend/web
@@ -73,7 +66,6 @@ services:
       - backend
     restart: unless-stopped
 
-  # ── Celery Worker ────────────────────────────────────────────
   celery-worker:
     build:
       context: ./backend
@@ -82,7 +74,6 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://william:william@postgres:5432/williamos
       - REDIS_URL=redis://redis:6379/0
-      - CORS_ORIGINS=http://80.225.215.117:3000,http://localhost:3000
     env_file:
       - .env
     depends_on:
@@ -93,7 +84,6 @@ services:
     command: celery -A app.worker worker -l info -c 2 --max-tasks-per-child=200
     restart: unless-stopped
 
-  # ── Celery Beat (Scheduler) ──────────────────────────────────
   celery-beat:
     build:
       context: ./backend
@@ -102,7 +92,6 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://william:william@postgres:5432/williamos
       - REDIS_URL=redis://redis:6379/0
-      - CORS_ORIGINS=http://80.225.215.117:3000,http://localhost:3000
     env_file:
       - .env
     depends_on:
@@ -111,7 +100,6 @@ services:
     command: celery -A app.worker beat -l info
     restart: unless-stopped
 
-  # ── Prometheus ───────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
     container_name: william-prometheus
@@ -122,7 +110,6 @@ services:
       - prometheus_data:/prometheus
     restart: unless-stopped
 
-  # ── Loki ─────────────────────────────────────────────────────
   loki:
     image: grafana/loki:2.9.8
     container_name: william-loki
@@ -134,7 +121,6 @@ services:
       - loki_data:/loki
     restart: unless-stopped
 
-  # ── Promtail ────────────────────────────────────────────────
   promtail:
     image: grafana/promtail:2.9.8
     container_name: william-promtail
@@ -147,14 +133,13 @@ services:
       - loki
     restart: unless-stopped
 
-  # ── Grafana ──────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
     container_name: william-grafana
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme_in_production}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./infra/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
@@ -172,15 +157,19 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - N8N_HOST=williamos.duckdns.org
+      - N8N_HOST=${N8N_HOST:-localhost}
       - N8N_PORT=5678
-      - N8N_PROTOCOL=https
-      - WEBHOOK_URL=https://williamos.duckdns.org/n8n/
-      - N8N_PATH=/n8n/
-      - N8N_EDITOR_BASE_URL=https://williamos.duckdns.org/n8n/
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      - N8N_PATH=${N8N_PATH:-/}
+      - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL:-http://localhost:5678/}
+      # M3 fix — require auth on n8n
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:?N8N_BASIC_AUTH_USER must be set in .env}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:?N8N_BASIC_AUTH_PASSWORD must be set in .env}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY must be set in .env}
     volumes:
       - n8n_data:/home/node/.n8n
-
 
 volumes:
   postgres_data:
@@ -189,5 +178,3 @@ volumes:
   loki_data:
   grafana_data:
   n8n_data:
-
-

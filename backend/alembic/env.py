@@ -5,6 +5,9 @@ Alembic async migration environment.
 import asyncio
 from logging.config import fileConfig
 
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
+
 from alembic import context
 from app.core.config import get_settings
 from app.core.database import Base
@@ -30,8 +33,6 @@ from app.modules.sleep.models import SleepDebt, SleepRecommendation, SleepRecord
 from app.modules.study.models import MockTest, RevisionCard, StudySession, Subject  # noqa
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist  # noqa
 from app.modules.voice.models import VoiceCommand  # noqa
-from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 settings = get_settings()

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from app.modules.agents.schemas import AgentAction, AgentRecommendation
+if TYPE_CHECKING:
+    from app.modules.agents.schemas import AgentAction, AgentRecommendation
 
 
 @dataclass(slots=True)

@@ -12,6 +12,9 @@ from datetime import UTC, date, datetime
 
 import httpx
 import structlog
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call
@@ -24,8 +27,6 @@ from app.modules.email_intel.schemas import (
 )
 from app.modules.scheduler.service import SchedulerService
 from app.shared.types import NotFoundError, ValidationError
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

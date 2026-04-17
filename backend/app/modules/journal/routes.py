@@ -8,6 +8,9 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.journal.models import JournalMood
@@ -20,8 +23,6 @@ from app.modules.journal.schemas import (
 )
 from app.modules.journal.service import JournalService
 from app.shared.types import success
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/journal", tags=["Journal Vault"])
 
@@ -89,7 +90,6 @@ async def get_draft(
     draft = await service.get_draft(
         user_id=user_id,
         passphrase=passphrase,
-        unlock_token=unlock_token,
     )
     return success(draft.model_dump(mode="json") if draft else None)
 
@@ -127,7 +127,6 @@ async def read_entry(
         user_id=user_id,
         entry_id=entry_id,
         passphrase=data.passphrase,
-        unlock_token=data.unlock_token,
     )
     return success(entry.model_dump(mode="json"))
 
@@ -155,6 +154,5 @@ async def generate_summary(
         user_id=user_id,
         entry_id=entry_id,
         passphrase=data.passphrase,
-        unlock_token=data.unlock_token,
     )
     return success(entry.model_dump(mode="json"))

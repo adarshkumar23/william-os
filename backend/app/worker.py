@@ -171,8 +171,6 @@ def generate_all_schedules(self):
         from app.modules.scheduler.schemas import ScheduleGenerateRequest
         from app.modules.scheduler.service import SchedulerService
 
-        tomorrow = date.today() + __import__("datetime").timedelta(days=1)
-
         async with async_session_factory() as db:
             result = await db.execute(
                 select(User).where(User.is_active == True)  # noqa: E712
@@ -180,11 +178,18 @@ def generate_all_schedules(self):
             users = result.scalars().all()
 
             for user in users:
+                # H8: compute "tomorrow" in the user's local timezone, not UTC
+                try:
+                    tz = ZoneInfo(user.timezone or "UTC")
+                except Exception:
+                    tz = ZoneInfo("UTC")
+                user_tomorrow = (datetime.now(UTC).astimezone(tz) + timedelta(days=1)).date()
+
                 try:
                     service = SchedulerService(db)
-                    request = ScheduleGenerateRequest(target_date=tomorrow)
+                    request = ScheduleGenerateRequest(target_date=user_tomorrow)
                     await service.generate_daily_plan(user.id, request)
-                    logger.info("schedule_generated", user_id=str(user.id), date=str(tomorrow))
+                    logger.info("schedule_generated", user_id=str(user.id), date=str(user_tomorrow))
                 except Exception as e:
                     logger.error(
                         "schedule_generation_failed",
@@ -1063,7 +1068,9 @@ def calendar_sync_task():
                         removed=sync_result.get("removed", 0),
                     )
                 except Exception as exc:
-                    logger.warning("calendar_sync_user_failed", user_id=str(user.id), error=str(exc))
+                    logger.warning(
+                        "calendar_sync_user_failed", user_id=str(user.id), error=str(exc)
+                    )
 
             await db.commit()
 
@@ -1199,9 +1206,7 @@ def deliver_webhook(self, delivery_id: str):
 
         async with async_session_factory() as db:
             result = await db.execute(
-                select(WebhookDelivery)
-                .where(WebhookDelivery.id == uuid.UUID(delivery_id))
-                .limit(1)
+                select(WebhookDelivery).where(WebhookDelivery.id == uuid.UUID(delivery_id)).limit(1)
             )
             delivery = result.scalar_one_or_none()
             if delivery is None:
@@ -1264,7 +1269,9 @@ def deliver_webhook(self, delivery_id: str):
                 backoff = [30, 120, 600][delivery.attempts - 1]
                 delivery.status = "pending"
                 delivery.error_message = str(exc)
-                delivery.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=backoff)
+                delivery.next_retry_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(
+                    seconds=backoff
+                )
                 await db.commit()
                 logger.warning(
                     "webhook_delivery_retry_scheduled",
@@ -1283,4 +1290,4 @@ def deliver_webhook(self, delivery_id: str):
         if isinstance(outcome, dict) and outcome.get("retry"):
             raise self.retry(countdown=int(outcome.get("countdown") or 30))
     except Exception as exc:
-        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
+        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1)) from exc

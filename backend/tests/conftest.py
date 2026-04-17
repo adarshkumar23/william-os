@@ -7,21 +7,25 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 import pytest
 import pytest_asyncio
-from app.core.database import Base, get_db
-from app.core.security import hash_password
-from app.main import app
-from app.modules.auth.models import User, UserRole
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
-# Use SQLite for fast unit tests; integration tests use real Postgres
-TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
+from app.core.database import Base, get_db
+from app.core.security import hash_password
+from app.main import app
+from app.modules.auth.models import User, UserRole
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
+# Use in-memory SQLite per test function — no leftover file between runs
+TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 SCHEMA_TRANSLATE_MAP = {
     "auth": None,
@@ -44,6 +48,14 @@ SCHEMA_TRANSLATE_MAP = {
     "agents": None,
     "rules": None,
     "security": None,
+    "briefing": None,
+    "chat": None,
+    "calendar": None,
+    "feed": None,
+    "experiments": None,
+    "export": None,
+    "integrations": None,
+    "secrets": None,
 }
 
 

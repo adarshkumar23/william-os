@@ -8,6 +8,9 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.study.schemas import (
@@ -25,8 +28,6 @@ from app.modules.study.schemas import (
 )
 from app.modules.study.service import StudyService
 from app.shared.types import success
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/study", tags=["IAS Study Mentor"])
 

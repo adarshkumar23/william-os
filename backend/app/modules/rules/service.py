@@ -11,6 +11,9 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import structlog
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.modules.fitness.models import WorkoutLog
 from app.modules.gamification.service import GamificationService
 from app.modules.habits.models import Habit
@@ -39,8 +42,6 @@ from app.modules.sleep.models import SleepRecord
 from app.modules.study.models import MockTest
 from app.modules.trading.models import PortfolioSnapshot, Watchlist
 from app.shared.types import NotFoundError
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -572,9 +573,7 @@ class RulesService:
         )
         latest_sleep = sleep_result.scalar_one_or_none()
         sleep_hours = (
-            round(float(latest_sleep.sleep_duration_minutes) / 60.0, 2)
-            if latest_sleep
-            else 0.0
+            round(float(latest_sleep.sleep_duration_minutes) / 60.0, 2) if latest_sleep else 0.0
         )
 
         workouts_result = await self.db.execute(

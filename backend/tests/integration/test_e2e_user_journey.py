@@ -10,6 +10,7 @@ import zipfile
 from typing import TYPE_CHECKING
 
 import pytest
+
 from app.core.security import decrypt_text
 
 if TYPE_CHECKING:

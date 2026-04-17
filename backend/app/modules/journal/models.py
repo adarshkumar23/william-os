@@ -10,7 +10,8 @@ import uuid
 from datetime import date
 from enum import Enum
 
-from sqlalchemy import Date, Enum as SAEnum, ForeignKey, LargeBinary, UniqueConstraint
+from sqlalchemy import Date, ForeignKey, LargeBinary, UniqueConstraint
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,8 +37,10 @@ class JournalEntry(Base):
     __table_args__ = {"schema": "journal"}
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("auth.users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     entry_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
 
@@ -46,7 +49,8 @@ class JournalEntry(Base):
 
     # Unencrypted metadata (for queries without decryption)
     mood: Mapped[JournalMood | None] = mapped_column(
-        SAEnum(JournalMood, schema="journal"), nullable=True,
+        SAEnum(JournalMood, schema="journal"),
+        nullable=True,
     )
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
     word_count: Mapped[int | None] = mapped_column(default=None)
@@ -72,6 +76,7 @@ class JournalDraft(Base):
     )
     encrypted_content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     mood: Mapped[JournalMood | None] = mapped_column(
-        SAEnum(JournalMood, schema="journal"), nullable=True,
+        SAEnum(JournalMood, schema="journal"),
+        nullable=True,
     )
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list)

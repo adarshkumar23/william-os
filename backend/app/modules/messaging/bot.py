@@ -5,11 +5,15 @@ Webhook command handling for messaging workflows.
 
 from __future__ import annotations
 
-import uuid
 from datetime import date
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
+from sqlalchemy import func, select
+from telegram import Update
+from telegram.ext import Application
+
 from app.core.config import get_settings
 from app.core.security import create_access_token
 from app.modules.habits.models import Habit
@@ -18,10 +22,11 @@ from app.modules.habits.service import HabitsService
 from app.modules.journal.schemas import JournalCreate
 from app.modules.journal.service import JournalService
 from app.modules.messaging.models import TelegramUser
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from telegram import Update
-from telegram.ext import Application
+
+if TYPE_CHECKING:
+    import uuid
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

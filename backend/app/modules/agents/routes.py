@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import uuid
 
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
-from app.modules.agents.schemas import AgentActionLogResponse, AgentRecommendationLogResponse, AgentStatusResponse
+from app.modules.agents.schemas import (
+    AgentRecommendationLogResponse,
+    AgentStatusResponse,
+)
 from app.modules.agents.service import OrchestratorAgentService
 from app.modules.auth.routes import get_current_user_id
 from app.shared.types import success
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
@@ -34,7 +38,9 @@ async def get_agent_recommendations(
 ) -> dict:
     service = OrchestratorAgentService(db)
     rows = await service.list_recommendations(user_id=user_id, limit=limit)
-    payload = [AgentRecommendationLogResponse.model_validate(item).model_dump(mode="json") for item in rows]
+    payload = [
+        AgentRecommendationLogResponse.model_validate(item).model_dump(mode="json") for item in rows
+    ]
     return success(payload)
 
 

@@ -6,8 +6,10 @@ Unit tests for SM-2 review updates, due cards query, and progress aggregation.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.modules.study.schemas import (
     MockTestCreate,
     RevisionCardCreate,
@@ -15,7 +17,9 @@ from app.modules.study.schemas import (
     SubjectCreate,
 )
 from app.modules.study.service import StudyService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

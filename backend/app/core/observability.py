@@ -23,11 +23,11 @@ def _setup_tracer_provider(settings: Settings) -> None:
     export_mod = importlib.import_module("opentelemetry.sdk.trace.export")
     sampling_mod = importlib.import_module("opentelemetry.sdk.trace.sampling")
 
-    Resource = resource_mod.Resource
-    TracerProvider = trace_mod.TracerProvider
-    BatchSpanProcessor = export_mod.BatchSpanProcessor
-    ConsoleSpanExporter = export_mod.ConsoleSpanExporter
-    TraceIdRatioBased = sampling_mod.TraceIdRatioBased
+    Resource = resource_mod.Resource  # noqa: N806
+    TracerProvider = trace_mod.TracerProvider  # noqa: N806
+    BatchSpanProcessor = export_mod.BatchSpanProcessor  # noqa: N806
+    ConsoleSpanExporter = export_mod.ConsoleSpanExporter  # noqa: N806
+    TraceIdRatioBased = sampling_mod.TraceIdRatioBased  # noqa: N806
 
     endpoint = settings.otel_exporter_otlp_endpoint.strip()
     provider = TracerProvider(
@@ -39,7 +39,7 @@ def _setup_tracer_provider(settings: Settings) -> None:
         exporter_mod = importlib.import_module(
             "opentelemetry.exporter.otlp.proto.http.trace_exporter"
         )
-        OTLPSpanExporter = exporter_mod.OTLPSpanExporter
+        OTLPSpanExporter = exporter_mod.OTLPSpanExporter  # noqa: N806
 
         exporter = OTLPSpanExporter(
             endpoint=endpoint,
@@ -77,7 +77,7 @@ def setup_tracing(app, settings: Settings) -> None:
 
     try:
         fastapi_mod = importlib.import_module("opentelemetry.instrumentation.fastapi")
-        FastAPIInstrumentor = fastapi_mod.FastAPIInstrumentor
+        FastAPIInstrumentor = fastapi_mod.FastAPIInstrumentor  # noqa: N806
 
         _setup_tracer_provider(settings)
         FastAPIInstrumentor.instrument_app(app, excluded_urls="/health,/metrics")
@@ -96,7 +96,7 @@ def setup_celery_tracing(celery_app, settings: Settings) -> None:
 
     try:
         celery_mod = importlib.import_module("opentelemetry.instrumentation.celery")
-        CeleryInstrumentor = celery_mod.CeleryInstrumentor
+        CeleryInstrumentor = celery_mod.CeleryInstrumentor  # noqa: N806
 
         _setup_tracer_provider(settings)
         CeleryInstrumentor().instrument()

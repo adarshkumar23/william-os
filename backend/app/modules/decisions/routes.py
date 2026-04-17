@@ -8,13 +8,14 @@ from __future__ import annotations
 import uuid
 
 import structlog
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.decisions.schemas import DecisionChoose, DecisionCreate, DecisionOutcome
 from app.modules.decisions.service import DecisionService
 from app.shared.types import success
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

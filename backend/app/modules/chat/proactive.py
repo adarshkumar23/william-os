@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from time import perf_counter
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
+from sqlalchemy import func, select
+
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
 from app.modules.auth.models import User
@@ -19,8 +21,11 @@ from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
 from app.modules.scheduler.models import BlockStatus, DailyPlan, ScheduleBlock
 from app.modules.sleep.models import SleepRecord
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    import uuid
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

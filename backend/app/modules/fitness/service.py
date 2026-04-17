@@ -12,6 +12,9 @@ from time import perf_counter
 
 import httpx
 import structlog
+from sqlalchemy import and_, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call
@@ -28,8 +31,6 @@ from app.modules.fitness.schemas import (
 )
 from app.modules.scheduler.service import SchedulerService
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -478,7 +479,7 @@ class FitnessService:
                 low_priority_peak.append(block)
 
         suggestions: list[str] = []
-        for hp, lp in zip(high_priority_misaligned[:3], low_priority_peak[:3]):
+        for hp, lp in zip(high_priority_misaligned[:3], low_priority_peak[:3], strict=False):
             suggestions.append(
                 f"Swap '{hp.title}' ({hp.start_time}) with '{lp.title}' ({lp.start_time}) to align priority with energy peaks."
             )

@@ -5,10 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time, timedelta
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.modules.calendar.apple_service import AppleCalendarService
 from app.modules.calendar.google_service import GoogleCalendarService
 from app.modules.calendar.schemas import CalendarEventResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class CalendarService:

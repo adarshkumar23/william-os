@@ -1,11 +1,12 @@
 import uuid
 
-from app.core.database import get_db
-from app.modules.auth.routes import get_current_user_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.modules.auth.routes import get_current_user_id
 
 from . import apple_service, google_service, native_service
 
@@ -39,6 +40,7 @@ class NativeEventUpdateRequest(BaseModel):
     end: str | None = None
     description: str | None = None
     location: str | None = None
+
 
 # ── Google ──────────────────────────────────────────────────────
 

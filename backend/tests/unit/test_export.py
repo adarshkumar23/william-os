@@ -12,6 +12,8 @@ from datetime import date, time
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import func, select
+
 from app.core.security import create_access_token, decrypt_text, encrypt_text
 from app.modules.audit.models import AuditAction, AuditLog
 from app.modules.auth.models import User
@@ -20,7 +22,6 @@ from app.modules.habits.models import Habit, HabitCheckIn
 from app.modules.journal.models import JournalEntry
 from app.modules.medicine.models import Medicine, MedicineLog
 from app.modules.scheduler.models import BlockCategory, DailyPlan, RescheduleEvent, ScheduleBlock
-from sqlalchemy import func, select
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 
 
 def _auth_headers(user_id) -> dict[str, str]:
-    token = create_access_token(user_id)
+    token = create_access_token(user_id, extra_claims={"role": "owner"})
     return {"Authorization": f"Bearer {token}"}
 
 

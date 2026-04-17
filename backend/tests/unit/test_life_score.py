@@ -43,8 +43,7 @@ async def test_compute_life_score_uses_weighted_components(db_session):
             "generate_explanation",
             AsyncMock(
                 return_value=(
-                    "Sleep pressure lowered your score. "
-                    "Consistent habits kept it stable."
+                    "Sleep pressure lowered your score. Consistent habits kept it stable."
                 )
             ),
         ),

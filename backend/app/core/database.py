@@ -1,28 +1,25 @@
-"""
-WILLIAM OS — Database Layer
-Async SQLAlchemy engine + session factory + declarative base.
+"""WILLIAM OS — Database Layer.
+H2 fix: get_db no longer auto-commits. Services must commit explicitly.
+H3 fix: init_db is gated by env flag WILLIAM_ENABLE_CREATE_ALL (off by default);
+        prefer running `alembic upgrade head` in dev too.
 """
 
 from __future__ import annotations
 
+import os
 import uuid
-from datetime import datetime, timezone
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import datetime
 
 from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-# ── Naming convention for consistent migration names ─────────────
 convention = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
@@ -30,7 +27,6 @@ convention = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
-
 metadata = MetaData(naming_convention=convention)
 
 engine = create_async_engine(
@@ -41,22 +37,12 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=3600,
 )
-
-async_session_factory = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
-    """Base model with automatic id + timestamps."""
-
     metadata = metadata
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -72,11 +58,10 @@ class Base(DeclarativeBase):
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency: yields an async DB session."""
+    """FastAPI dependency. Services must commit explicitly; this only rolls back on error."""
     async with async_session_factory() as session:
         try:
             yield session
-            await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -85,11 +70,12 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all tables (dev only — use Alembic in production)."""
+    """Only enabled when WILLIAM_ENABLE_CREATE_ALL=1. Otherwise use Alembic."""
+    if os.getenv("WILLIAM_ENABLE_CREATE_ALL") != "1":
+        return
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:
-    """Dispose of connection pool."""
     await engine.dispose()

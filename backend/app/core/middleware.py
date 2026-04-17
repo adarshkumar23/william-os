@@ -7,8 +7,9 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from app.core.metrics import observe_api_request
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.core.metrics import observe_api_request
 
 if TYPE_CHECKING:
     from fastapi.responses import Response

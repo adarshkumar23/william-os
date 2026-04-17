@@ -6,12 +6,16 @@ Unit tests for medicine CRUD, logging, upcoming reminders, and adherence metrics
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.modules.medicine.models import MedicineType
 from app.modules.medicine.schemas import MedicineCreate
 from app.modules.medicine.service import MedicineService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

@@ -8,8 +8,9 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from uuid import UUID
 
-from app.modules.habits.models import HabitFrequency
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.modules.habits.models import HabitFrequency
 
 
 class HabitCreate(BaseModel):

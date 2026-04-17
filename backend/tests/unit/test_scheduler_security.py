@@ -6,15 +6,19 @@ Validate user ownership boundaries for schedule block operations.
 from __future__ import annotations
 
 from datetime import date, time
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
 from app.modules.scheduler.models import BlockCategory, DailyPlan, PlanStatus, ScheduleBlock
 from app.modules.scheduler.schemas import BlockUpdate
 from app.modules.scheduler.service import SchedulerService
 from app.shared.types import NotFoundError
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

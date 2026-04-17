@@ -8,11 +8,12 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from app.core.security import create_access_token
-from app.core.websocket import connection_manager, register_websocket_routes
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+
+from app.core.security import create_access_token
+from app.core.websocket import connection_manager, register_websocket_routes
 
 
 @pytest.fixture(autouse=True)

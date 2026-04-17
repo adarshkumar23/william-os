@@ -8,19 +8,19 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.scheduler.schemas import (
     BlockCreate,
     BlockUpdate,
-    DayScoreUpdate,
     RescheduleRequest,
     ScheduleGenerateRequest,
 )
 from app.modules.scheduler.service import SchedulerService
 from app.shared.types import success
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/schedule", tags=["Scheduler"])
 

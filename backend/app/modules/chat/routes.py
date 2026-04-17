@@ -9,6 +9,11 @@ import json
 import uuid
 from typing import Any
 
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.chat.proactive import ProactiveMessageService
@@ -21,10 +26,6 @@ from app.modules.chat.schemas import (
 )
 from app.modules.chat.service import ChatService
 from app.shared.types import success
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -49,7 +50,9 @@ async def create_session(
         agent_name=data.agent_name,
         title=data.title,
     )
-    return success(ChatSessionResponse.model_validate(session).model_dump(mode="json", by_alias=True))
+    return success(
+        ChatSessionResponse.model_validate(session).model_dump(mode="json", by_alias=True)
+    )
 
 
 @router.get("/sessions")
@@ -59,23 +62,25 @@ async def list_sessions(
 ) -> dict:
     service = ChatService(db)
     sessions = await service.get_sessions(user_id)
-    
+
     items = []
     for s in sessions:
         last_msg_text = None
         if s.messages:
             last = s.messages[-1]
             last_msg_text = last.content if getattr(last, "content", None) else "Action taken"
-            
-        items.append(ChatSessionListItem(
-            id=s.id,
-            user_id=s.user_id,
-            agent_name=s.agent_name,
-            title=s.title,
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-            last_message_preview=last_msg_text
-        ).model_dump(mode="json"))
+
+        items.append(
+            ChatSessionListItem(
+                id=s.id,
+                user_id=s.user_id,
+                agent_name=s.agent_name,
+                title=s.title,
+                created_at=s.created_at,
+                updated_at=s.updated_at,
+                last_message_preview=last_msg_text,
+            ).model_dump(mode="json")
+        )
 
     return success(items)
 
@@ -100,14 +105,18 @@ async def send_message(
 ) -> dict:
     service = ChatService(db)
     user_msg, assistant_msg = await service.send_message(
-        session_id=session_id,
-        user_id=user_id,
-        content=data.content
+        session_id=session_id, user_id=user_id, content=data.content
     )
-    return success({
-        "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(mode="json", by_alias=True),
-        "assistant_message": ChatMessageResponse.model_validate(assistant_msg).model_dump(mode="json", by_alias=True)
-    })
+    return success(
+        {
+            "user_message": ChatMessageResponse.model_validate(user_msg).model_dump(
+                mode="json", by_alias=True
+            ),
+            "assistant_message": ChatMessageResponse.model_validate(assistant_msg).model_dump(
+                mode="json", by_alias=True
+            ),
+        }
+    )
 
 
 @router.post("/sessions/{session_id}/messages/stream")
@@ -130,7 +139,9 @@ async def send_message_stream(
             payload = event.get("payload")
 
             if event_type == "user_message":
-                user_payload = ChatMessageResponse.model_validate(payload).model_dump(mode="json", by_alias=True)
+                user_payload = ChatMessageResponse.model_validate(payload).model_dump(
+                    mode="json", by_alias=True
+                )
                 yield _sse_event("user_message", user_payload)
                 continue
 
@@ -139,7 +150,9 @@ async def send_message_stream(
                 continue
 
             if event_type == "done":
-                assistant_payload = ChatMessageResponse.model_validate(payload).model_dump(mode="json", by_alias=True)
+                assistant_payload = ChatMessageResponse.model_validate(payload).model_dump(
+                    mode="json", by_alias=True
+                )
                 yield _sse_event("done", {"assistant_message": assistant_payload})
 
     return StreamingResponse(
@@ -162,7 +175,10 @@ async def get_messages(
 ) -> dict:
     service = ChatService(db)
     messages = await service.get_messages(session_id, user_id, limit=limit)
-    items = [ChatMessageResponse.model_validate(m).model_dump(mode="json", by_alias=True) for m in messages]
+    items = [
+        ChatMessageResponse.model_validate(m).model_dump(mode="json", by_alias=True)
+        for m in messages
+    ]
     return success(items)
 
 

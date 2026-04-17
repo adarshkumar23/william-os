@@ -8,15 +8,15 @@ from __future__ import annotations
 import json
 import secrets
 import uuid
-from datetime import date
-from datetime import datetime
-from datetime import timedelta
-from datetime import UTC
+from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 import httpx
 import redis.asyncio as redis
 import structlog
+from sqlalchemy import and_, select
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call
@@ -30,9 +30,9 @@ from app.modules.journal.schemas import (
     JournalMetadata,
 )
 from app.shared.types import EncryptionError, NotFoundError
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 _JOURNAL_UNLOCK_TTL_MINUTES = 30
@@ -324,7 +324,9 @@ class JournalService:
         else:
             latest_token = await self._get_latest_unlock_token(user_id=user_id)
             if latest_token:
-                cached = await self._read_unlock_session(user_id=user_id, session_token=latest_token)
+                cached = await self._read_unlock_session(
+                    user_id=user_id, session_token=latest_token
+                )
                 if cached:
                     return cached
 
@@ -411,7 +413,8 @@ class JournalService:
                 },
                 {
                     "role": "user",
-                    "content": content,
+                    # M15: wrap in delimiters so user prose cannot escape the content role
+                    "content": f"<journal_entry>{content}</journal_entry>",
                 },
             ],
             "temperature": 0.2,

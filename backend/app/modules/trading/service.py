@@ -13,6 +13,9 @@ from time import perf_counter
 
 import httpx
 import structlog
+from sqlalchemy import and_, desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist
@@ -27,8 +30,6 @@ from app.modules.trading.schemas import (
     WatchlistResponse,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

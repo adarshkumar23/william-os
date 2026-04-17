@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-import uuid
+from typing import TYPE_CHECKING
+
+from fastapi import APIRouter, Depends
 
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
-from app.modules.auth.schemas import OnboardingCompleteRequest
 from app.modules.auth.service import AuthService
 from app.shared.types import success
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    import uuid
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.modules.auth.schemas import OnboardingCompleteRequest
 
 router = APIRouter(prefix="/auth/onboarding", tags=["Authentication"])
 

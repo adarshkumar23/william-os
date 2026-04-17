@@ -8,11 +8,12 @@ from __future__ import annotations
 import uuid
 from enum import Enum
 
-from app.core.database import Base
-from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
 
 
 class AgentName(str, Enum):
@@ -76,8 +77,6 @@ class ChatMessage(Base):
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     actions_taken: Mapped[list | None] = mapped_column(JSONB, default=list)
-    extra_metadata: Mapped[dict | None] = mapped_column(
-        "extra_metadata", JSONB, default=None
-    )
+    extra_metadata: Mapped[dict | None] = mapped_column("extra_metadata", JSONB, default=None)
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
