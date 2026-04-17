@@ -6,7 +6,7 @@ Subscribes to ALL events and persists them as immutable audit logs.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import structlog
 from sqlalchemy import and_, func, select
@@ -29,6 +29,8 @@ EVENT_TO_ACTION: dict[EventType, AuditAction] = {
     EventType.JOURNAL_ENTRY_CREATED: AuditAction.JOURNAL_CREATE,
     EventType.MEDICINE_TAKEN: AuditAction.MEDICINE_TAKEN,
     EventType.MEDICINE_MISSED: AuditAction.MEDICINE_MISSED,
+    # M16: chat executor actions flow through INTEGRATION_TRIGGERED
+    EventType.INTEGRATION_TRIGGERED: AuditAction.AI_CALL,
 }
 
 
@@ -36,14 +38,9 @@ async def audit_event_handler(event: Event) -> None:
     """Global event handler — logs every event to audit trail."""
     action = EVENT_TO_ACTION.get(event.type)
     if not action:
-        # Log as AI_CALL or generic based on type
-        action_str = event.type.value.replace(".", "_").upper()
-        try:
-            action = AuditAction(event.type.value)
-        except ValueError:
-            # Not a mapped action — still log the raw event
-            logger.debug("audit_unmapped_event", event_type=event.type.value)
-            return
+        # H15: removed dead code; skip cleanly for unmapped events
+        logger.debug("audit_unmapped_event", event_type=event.type.value)
+        return
 
     try:
         async with async_session_factory() as session:
@@ -109,7 +106,7 @@ class AuditService:
 
     async def get_stats(self, user_id: uuid.UUID, days: int = 30) -> dict:
         """Aggregate audit stats for dashboard."""
-        cutoff = datetime.now().replace(hour=0, minute=0, second=0) - __import__("datetime").timedelta(days=days)
+        cutoff = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None) - timedelta(days=days)
         result = await self.db.execute(
             select(AuditLog.action, func.count())
             .where(and_(AuditLog.user_id == user_id, AuditLog.created_at >= cutoff))

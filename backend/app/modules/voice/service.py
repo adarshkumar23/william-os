@@ -10,6 +10,7 @@ import json
 import time
 import uuid
 from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
@@ -199,11 +200,20 @@ class VoiceService:
                 return f"I could not find medicine: {medicine_name}."
 
             service = MedicineService(self.db)
+            # H16: use user's local time, not UTC, for medicine scheduled_time
+            from app.modules.auth.models import User
+
+            _user = await self.db.get(User, user_id)
+            try:
+                _tz = ZoneInfo(_user.timezone or "UTC") if _user else ZoneInfo("UTC")
+            except Exception:
+                _tz = ZoneInfo("UTC")
+            _local_now = datetime.now(UTC).astimezone(_tz)
             await service.log_dose(
                 user_id=user_id,
                 medicine_id=medicine.id,
-                log_date=date.today(),
-                scheduled_time=datetime.now(UTC).replace(tzinfo=None).time().replace(microsecond=0),
+                log_date=_local_now.date(),
+                scheduled_time=_local_now.time().replace(microsecond=0),
                 taken=True,
                 skipped=False,
                 skip_reason=None,

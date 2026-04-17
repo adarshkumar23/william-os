@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime
 from app.core.events import Event, EventType, event_bus
 from app.core.security import hash_token
 from app.modules.auth.models import ApiKey
-from app.modules.auth.routes import get_current_user_id
+from app.core.security import decode_token
 from app.modules.decisions.schemas import DecisionChoose, DecisionCreate, DecisionOutcome
 from app.modules.decisions.service import DecisionService
 from app.modules.fitness.schemas import WorkoutLogCreate
@@ -70,8 +70,12 @@ class IntegrationsService:
         token = authorization[7:].strip()
         if token.startswith("wos-"):
             return await self._authenticate_api_key(token)
+        # M19: decode JWT directly to avoid importing from auth.routes (layering violation)
         try:
-            user_id = await get_current_user_id(authorization)
+            from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+
+            payload = decode_token(token)
+            user_id = uuid.UUID(str(payload["sub"]))
         except Exception as exc:
             raise AuthenticationError("Invalid access token") from exc
         return IntegrationAuthMeta(user_id=user_id, source="jwt", token_type="jwt")

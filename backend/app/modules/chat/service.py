@@ -472,7 +472,16 @@ class ChatService:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
-                raw = response.json()
+                # H14: guard against HTML error pages returning non-JSON with 200 status
+                try:
+                    raw = response.json()
+                except Exception:
+                    logger.error(
+                        "chat_gemini_response_not_json",
+                        status=response.status_code,
+                        preview=response.text[:200],
+                    )
+                    return "I am having trouble connecting to my neural core right now."
             observe_ai_call(provider="gemini", duration_seconds=perf_counter() - started)
             if "candidates" in raw and len(raw["candidates"]) > 0:
                 parts = raw["candidates"][0]["content"]["parts"]
@@ -556,7 +565,9 @@ class ChatService:
                         delta = chunk_text[len(emitted_text) :]
                         emitted_text = chunk_text
                     else:
+                        # M20: non-prefix chunk — emit as delta and reset tracker
                         delta = chunk_text
+                        emitted_text = chunk_text
                         emitted_text += delta
 
                     if delta:

@@ -171,8 +171,6 @@ def generate_all_schedules(self):
         from app.modules.scheduler.schemas import ScheduleGenerateRequest
         from app.modules.scheduler.service import SchedulerService
 
-        tomorrow = date.today() + __import__("datetime").timedelta(days=1)
-
         async with async_session_factory() as db:
             result = await db.execute(
                 select(User).where(User.is_active == True)  # noqa: E712
@@ -180,11 +178,20 @@ def generate_all_schedules(self):
             users = result.scalars().all()
 
             for user in users:
+                # H8: compute "tomorrow" in the user's local timezone, not UTC
+                try:
+                    tz = ZoneInfo(user.timezone or "UTC")
+                except Exception:
+                    tz = ZoneInfo("UTC")
+                user_tomorrow = (datetime.now(UTC).astimezone(tz) + timedelta(days=1)).date()
+
                 try:
                     service = SchedulerService(db)
-                    request = ScheduleGenerateRequest(target_date=tomorrow)
+                    request = ScheduleGenerateRequest(target_date=user_tomorrow)
                     await service.generate_daily_plan(user.id, request)
-                    logger.info("schedule_generated", user_id=str(user.id), date=str(tomorrow))
+                    logger.info(
+                        "schedule_generated", user_id=str(user.id), date=str(user_tomorrow)
+                    )
                 except Exception as e:
                     logger.error(
                         "schedule_generation_failed",

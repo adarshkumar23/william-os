@@ -20,8 +20,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 
-# Use SQLite for fast unit tests; integration tests use real Postgres
-TEST_DB_URL = "sqlite+aiosqlite:///./test.db"
+# Use in-memory SQLite per test function — no leftover file between runs
+TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 SCHEMA_TRANSLATE_MAP = {
     "auth": None, "scheduler": None, "audit": None, "habits": None,

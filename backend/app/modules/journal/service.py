@@ -410,7 +410,8 @@ class JournalService:
                 },
                 {
                     "role": "user",
-                    "content": content,
+                    # M15: wrap in delimiters so user prose cannot escape the content role
+                    "content": f"<journal_entry>{content}</journal_entry>",
                 },
             ],
             "temperature": 0.2,

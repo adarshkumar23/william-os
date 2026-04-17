@@ -11,7 +11,7 @@ import io
 import json
 import uuid
 import zipfile
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -224,7 +224,7 @@ class ExportService:
             )
 
         payload = {
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
             "user_id": str(user_id),
             "entry_count": len(exported_entries),
             "entries": exported_entries,
@@ -245,7 +245,7 @@ class ExportService:
 
         safe_days = max(1, min(days, 365))
         summary = await self.get_data_summary(user_id)
-        since = datetime.now() - timedelta(days=safe_days)
+        since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=safe_days)
 
         recent_habit_checkins = await self._count_recent_habit_checkins(user_id=user_id, since=since)
         total_study_sessions = await self._count(StudySession, StudySession.user_id == user_id)
@@ -260,7 +260,7 @@ class ExportService:
         pdf.cell(0, 10, f"WILLIAM OS {title}", ln=True)
 
         pdf.set_font("Helvetica", size=11)
-        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        generated_at = datetime.now(UTC).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M")
         pdf.cell(0, 8, f"Generated: {generated_at}", ln=True)
         pdf.cell(0, 8, f"User: {user.email}", ln=True)
         pdf.cell(0, 8, f"Window: last {safe_days} day(s)", ln=True)
@@ -525,7 +525,7 @@ class ExportService:
             raise NotFoundError("User", str(user_id))
 
         return {
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
             "user_id": str(user_id),
             "summary": await self.get_data_summary(user_id),
             "data": {

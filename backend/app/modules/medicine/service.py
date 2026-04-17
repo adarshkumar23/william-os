@@ -21,6 +21,7 @@ from app.modules.medicine.schemas import (
 )
 from app.shared.types import NotFoundError, ValidationError
 from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
@@ -135,6 +136,25 @@ class MedicineService:
                 skip_reason=skip_reason,
             )
             self.db.add(log)
+            # M13/H12: handle concurrent duplicate-slot inserts
+            try:
+                await self.db.flush()
+            except IntegrityError:
+                await self.db.rollback()
+                existing_result = await self.db.execute(
+                    select(MedicineLog).where(
+                        and_(
+                            MedicineLog.medicine_id == medicine.id,
+                            MedicineLog.log_date == log_date,
+                            MedicineLog.scheduled_time == scheduled_time,
+                        )
+                    )
+                )
+                log = existing_result.scalar_one()
+                log.taken = taken
+                log.skipped = skipped
+                log.skip_reason = skip_reason
+                log.taken_at = taken_at
 
         if taken and medicine.remaining_count is not None:
             medicine.remaining_count = max(0, medicine.remaining_count - 1)

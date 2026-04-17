@@ -12,6 +12,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from app.core.events import Event, EventType, event_bus
 from app.modules.briefing.service import MorningBriefingService
 from app.modules.chat.prompts import ActionItem, ActionResult
 from app.modules.decisions.schemas import DecisionCreate
@@ -91,7 +92,17 @@ class ActionExecutor:
         if not handler:
             return ActionResult(success=False, message=f"Action {action.type} not supported.")
         try:
-            return await handler(action.params)
+            result = await handler(action.params)
+            if result.success:
+                # M16: audit every successful chat executor action
+                await event_bus.publish(
+                    Event(
+                        type=EventType.INTEGRATION_TRIGGERED,
+                        data={"action_type": action.type, "message": result.message},
+                        user_id=self.user_id,
+                    )
+                )
+            return result
         except Exception as e:
             logger.exception("action_execution_failed", type=action.type, error=str(e))
             return ActionResult(success=False, message=f"Failed: {e}")
