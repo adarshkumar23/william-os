@@ -1290,4 +1290,4 @@ def deliver_webhook(self, delivery_id: str):
         if isinstance(outcome, dict) and outcome.get("retry"):
             raise self.retry(countdown=int(outcome.get("countdown") or 30))
     except Exception as exc:
-        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
+        raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1)) from exc

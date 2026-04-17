@@ -5,7 +5,7 @@ Pydantic models for Study Mentor API contracts.
 
 from __future__ import annotations
 
-from datetime import date as DateType
+from datetime import date as date_t
 from datetime import datetime
 from uuid import UUID
 
@@ -44,7 +44,7 @@ class StudySessionCreate(BaseModel):
     topics_covered: list[str] = Field(default_factory=list)
     comprehension_score: float = Field(ge=1, le=10)
     notes: str | None = None
-    session_date: DateType = Field(default_factory=DateType.today)
+    session_date: date_t = Field(default_factory=date_t.today)
 
 
 class StudySessionUpdate(BaseModel):
@@ -52,7 +52,7 @@ class StudySessionUpdate(BaseModel):
     topics_covered: list[str] | None = None
     comprehension_score: float | None = Field(default=None, ge=1, le=10)
     notes: str | None = None
-    session_date: DateType | None = None
+    session_date: date_t | None = None
 
 
 class StudySessionResponse(BaseModel):
@@ -63,7 +63,7 @@ class StudySessionResponse(BaseModel):
     topics_covered: list[str]
     comprehension_score: float
     notes: str | None
-    session_date: DateType
+    session_date: date_t
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -73,13 +73,13 @@ class RevisionCardCreate(BaseModel):
     subject_id: UUID
     question: str = Field(min_length=1)
     answer: str = Field(min_length=1)
-    next_review_date: DateType = Field(default_factory=DateType.today)
+    next_review_date: date_t = Field(default_factory=date_t.today)
 
 
 class RevisionCardUpdate(BaseModel):
     question: str | None = Field(default=None, min_length=1)
     answer: str | None = Field(default=None, min_length=1)
-    next_review_date: DateType | None = None
+    next_review_date: date_t | None = None
 
 
 class RevisionCardResponse(BaseModel):
@@ -88,11 +88,11 @@ class RevisionCardResponse(BaseModel):
     subject_id: UUID
     question: str
     answer: str
-    next_review_date: DateType
+    next_review_date: date_t
     interval_days: int
     ease_factor: float
     repetitions: int
-    last_reviewed: DateType | None
+    last_reviewed: date_t | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -107,7 +107,7 @@ class MockTestCreate(BaseModel):
     test_name: str = Field(min_length=1, max_length=200)
     score: int = Field(ge=0)
     total: int = Field(ge=1)
-    date: DateType = Field(default_factory=DateType.today)
+    date: date_t = Field(default_factory=date_t.today)
     analysis: dict | None = None
 
     @model_validator(mode="after")
@@ -121,7 +121,7 @@ class MockTestUpdate(BaseModel):
     test_name: str | None = Field(default=None, min_length=1, max_length=200)
     score: int | None = Field(default=None, ge=0)
     total: int | None = Field(default=None, ge=1)
-    date: DateType | None = None
+    date: date_t | None = None
     analysis: dict | None = None
 
 
@@ -133,7 +133,7 @@ class MockTestResponse(BaseModel):
     score: int
     total: int
     percentage: float
-    date: DateType
+    date: date_t
     analysis: dict | None
     created_at: datetime
 
@@ -149,7 +149,7 @@ class StudyProgress(BaseModel):
 
 
 class StudyPlanRequest(BaseModel):
-    target_date: DateType
+    target_date: date_t
     daily_hours: int = Field(ge=1, le=16)
 
 

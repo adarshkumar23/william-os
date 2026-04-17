@@ -392,7 +392,7 @@ class GamificationService:
             return 5
         if action == "study_session_completed":
             duration = int(metadata.get("duration_minutes") or 0)
-            return max(0, int(round((duration / 60.0) * 20)))
+            return max(0, round((duration / 60.0) * 20))
         if action == "sleep_goal_met":
             return 25
         if action == "workout_logged":

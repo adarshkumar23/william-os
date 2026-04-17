@@ -99,7 +99,7 @@ class TestEncryption:
 
     def test_wrong_passphrase_fails(self):
         encrypted = encrypt_text("Secret data", "correct-passphrase")
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             decrypt_text(encrypted, "wrong-passphrase")
 
     def test_different_encryptions_produce_different_output(self):

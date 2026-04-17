@@ -248,7 +248,7 @@ class StudyService:
             elif old_repetitions == 1:
                 new_interval = 6
             else:
-                new_interval = max(1, int(round(old_interval * new_ease)))
+                new_interval = max(1, round(old_interval * new_ease))
 
         today = date.today()
         card.repetitions = new_repetitions

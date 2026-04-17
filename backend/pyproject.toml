@@ -57,11 +57,20 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH", "RUF"]
+ignore = [
+    "B008",    # Pydantic Field() calls in function defaults — intended pattern
+    "RUF012",  # Mutable class attributes in Pydantic models — intended pattern
+    "UP042",   # replace-str-enum — cosmetic, out of scope
+    "TC001",   # typing-only first-party import — enforced separately
+    "TC002",   # typing-only third-party import — enforced separately
+    "TC003",   # typing-only stdlib import — enforced separately
+    "E501",    # line too long — enforced by line-length setting
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

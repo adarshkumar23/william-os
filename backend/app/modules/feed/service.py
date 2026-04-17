@@ -550,10 +550,7 @@ class ActivityFeedService:
 
     @staticmethod
     def _encode_cursor(timestamp: datetime, key: str) -> str:
-        if timestamp.tzinfo is None:
-            ts = timestamp
-        else:
-            ts = timestamp.astimezone(UTC)
+        ts = timestamp if timestamp.tzinfo is None else timestamp.astimezone(UTC)
         payload = {
             "t": ts.isoformat(),
             "k": key,

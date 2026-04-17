@@ -479,7 +479,7 @@ class FitnessService:
                 low_priority_peak.append(block)
 
         suggestions: list[str] = []
-        for hp, lp in zip(high_priority_misaligned[:3], low_priority_peak[:3]):
+        for hp, lp in zip(high_priority_misaligned[:3], low_priority_peak[:3], strict=False):
             suggestions.append(
                 f"Swap '{hp.title}' ({hp.start_time}) with '{lp.title}' ({lp.start_time}) to align priority with energy peaks."
             )
