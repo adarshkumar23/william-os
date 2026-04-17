@@ -7,6 +7,13 @@ import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import DashboardPage from "./pages/DashboardPage";
+import CareerDashboardPage from "./pages/career/CareerDashboardPage";
+import CareerCoachPage from "./pages/career/CareerCoachPage";
+import ProblemsPage from "./pages/career/ProblemsPage";
+import ProjectsPage from "./pages/career/ProjectsPage";
+import ApplicationsKanbanPage from "./pages/career/ApplicationsKanbanPage";
+import NetworkPage from "./pages/career/NetworkPage";
+import OpportunitiesPage from "./pages/career/OpportunitiesPage";
 import DecisionsPage from "./pages/DecisionsPage";
 import FitnessPage from "./pages/FitnessPage";
 import HabitsPage from "./pages/Habits";
@@ -131,6 +138,34 @@ export default function App() {
             <Route
               path="/admin"
               element={<ModuleBoundary moduleName="admin"><AnimatedRouteWrapper><AdminPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/career"
+              element={<ModuleBoundary moduleName="career-dashboard"><AnimatedRouteWrapper><CareerDashboardPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/career/coach"
+              element={<ModuleBoundary moduleName="career-coach"><AnimatedRouteWrapper><CareerCoachPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/career/problems"
+              element={<ModuleBoundary moduleName="career-problems"><AnimatedRouteWrapper><ProblemsPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/career/projects"
+              element={<ModuleBoundary moduleName="career-projects"><AnimatedRouteWrapper><ProjectsPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/career/applications"
+              element={<ModuleBoundary moduleName="career-applications"><AnimatedRouteWrapper><ApplicationsKanbanPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/career/network"
+              element={<ModuleBoundary moduleName="career-network"><AnimatedRouteWrapper><NetworkPage /></AnimatedRouteWrapper></ModuleBoundary>}
+            />
+            <Route
+              path="/career/opportunities"
+              element={<ModuleBoundary moduleName="career-opportunities"><AnimatedRouteWrapper><OpportunitiesPage /></AnimatedRouteWrapper></ModuleBoundary>}
             />
           </Route>
         </Route>

@@ -590,6 +590,51 @@ export const api = {
     },
     deleteAccount: (password: string) => del<{ deleted: boolean }>("/export/account", { password }),
   },
+  career: {
+    dashboard: () => get<Record<string, unknown>>("/career/dashboard"),
+    scoreHistory: (days = 30) => get<Array<Record<string, unknown>>>("/career/score/history", { days }),
+    recomputeScore: () => post<Record<string, unknown>>("/career/score/recompute"),
+    updateCFRating: (rating: number) => post<Record<string, unknown>>("/career/score/cf-rating", { rating }),
+
+    listProblems: (params?: AnyRecord) => get<AnyRecord[]>("/career/problems", params),
+    createProblem: (payload: AnyRecord) => post<AnyRecord>("/career/problems", payload),
+    getProblem: (id: string) => get<AnyRecord>(`/career/problems/${id}`),
+    updateProblem: (id: string, payload: AnyRecord) => patch<AnyRecord>(`/career/problems/${id}`, payload),
+    deleteProblem: (id: string) => del<{ deleted: boolean }>(`/career/problems/${id}`),
+
+    listProjects: () => get<AnyRecord[]>("/career/projects"),
+    createProject: (payload: AnyRecord) => post<AnyRecord>("/career/projects", payload),
+    getProject: (id: string) => get<AnyRecord>(`/career/projects/${id}`),
+    updateProject: (id: string, payload: AnyRecord) => patch<AnyRecord>(`/career/projects/${id}`, payload),
+    deleteProject: (id: string) => del<{ deleted: boolean }>(`/career/projects/${id}`),
+
+    listApplications: (params?: AnyRecord) => get<AnyRecord[]>("/career/applications", params),
+    createApplication: (payload: AnyRecord) => post<AnyRecord>("/career/applications", payload),
+    getApplicationPipeline: () => get<Record<string, AnyRecord[]>>("/career/applications/pipeline"),
+    getApplication: (id: string) => get<AnyRecord>(`/career/applications/${id}`),
+    updateApplication: (id: string, payload: AnyRecord) => patch<AnyRecord>(`/career/applications/${id}`, payload),
+    deleteApplication: (id: string) => del<{ deleted: boolean }>(`/career/applications/${id}`),
+    updateApplicationStage: (id: string, stage: string) =>
+      post<AnyRecord>(`/career/applications/${id}/stage`, { stage }),
+
+    listContacts: (params?: AnyRecord) => get<AnyRecord[]>("/career/contacts", params),
+    createContact: (payload: AnyRecord) => post<AnyRecord>("/career/contacts", payload),
+    getContactFollowups: () => get<AnyRecord[]>("/career/contacts/followups"),
+    getContact: (id: string) => get<AnyRecord>(`/career/contacts/${id}`),
+    updateContact: (id: string, payload: AnyRecord) => patch<AnyRecord>(`/career/contacts/${id}`, payload),
+    deleteContact: (id: string) => del<{ deleted: boolean }>(`/career/contacts/${id}`),
+    draftContactMessage: (id: string, context?: string) =>
+      post<{ draft: string; contact_id: string }>(`/career/contacts/${id}/draft-message`, { context }),
+
+    listOpportunities: (params?: AnyRecord) => get<AnyRecord[]>("/career/opportunities", params),
+    createOpportunity: (payload: AnyRecord) => post<AnyRecord>("/career/opportunities", payload),
+    getOpportunity: (id: string) => get<AnyRecord>(`/career/opportunities/${id}`),
+    updateOpportunity: (id: string, payload: AnyRecord) => patch<AnyRecord>(`/career/opportunities/${id}`, payload),
+    deleteOpportunity: (id: string) => del<{ deleted: boolean }>(`/career/opportunities/${id}`),
+    convertOpportunity: (id: string, payload: { role: string; platform?: string }) =>
+      post<AnyRecord>(`/career/opportunities/${id}/convert`, payload),
+  },
+
   chat: {
     createSession: (payload: { agent_name: string; title: string }) => 
       post<ChatSession>("/chat/sessions", payload),
