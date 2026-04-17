@@ -8,8 +8,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
 
-from app.modules.journal.models import JournalMood
 from pydantic import BaseModel, Field
+
+from app.modules.journal.models import JournalMood
 
 
 class JournalCreate(BaseModel):

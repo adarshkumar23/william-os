@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 import structlog
+from sqlalchemy import desc, select
+
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
 from app.modules.auth.models import User
@@ -26,7 +28,6 @@ from app.modules.memory.schemas import (
 )
 from app.modules.sleep.models import SleepRecord
 from app.modules.study.models import StudySession
-from sqlalchemy import desc, select
 
 if TYPE_CHECKING:
     import uuid
@@ -576,9 +577,7 @@ class MemoryService:
         words: list[str] = []
         for msg in messages:
             words.extend(
-                w.lower()
-                for w in str(msg).split()
-                if w.lower() not in stop_words and len(w) > 3
+                w.lower() for w in str(msg).split() if w.lower() not in stop_words and len(w) > 3
             )
 
         top_topics = [word for word, _count in Counter(words).most_common(10)]

@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
+
 from app.core.events import Event, EventType, event_bus
 from app.modules.habits.models import (
     Habit,
@@ -25,10 +29,9 @@ from app.modules.habits.schemas import (
     ProcrastinationSignalResponse,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 

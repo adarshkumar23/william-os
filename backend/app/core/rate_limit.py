@@ -2,6 +2,7 @@
 H4 fix: single Redis sorted set per identifier instead of N independent keys.
 H5 fix: uses decode_token_safe (non-raising).
 """
+
 from __future__ import annotations
 
 import time
@@ -21,9 +22,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """Sliding window rate limit via Redis sorted set."""
 
     def __init__(
-        self, app, *, redis_url: str | None = None, redis_client=None,
-        unauthenticated_limit: int = 60, authenticated_limit: int = 120,
-        burst_allowance: int = 10, window_seconds: int = 60,
+        self,
+        app,
+        *,
+        redis_url: str | None = None,
+        redis_client=None,
+        unauthenticated_limit: int = 60,
+        authenticated_limit: int = 120,
+        burst_allowance: int = 10,
+        window_seconds: int = 60,
     ) -> None:
         super().__init__(app)
         s = get_settings()
@@ -44,7 +51,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return ORJSONResponse(
                 status_code=429,
                 content={
-                    "ok": False, "data": None, "error": "Rate limit exceeded",
+                    "ok": False,
+                    "data": None,
+                    "error": "Rate limit exceeded",
                     "meta": {"identifier": identifier, "retry_after_seconds": retry_after},
                 },
                 headers={"Retry-After": str(retry_after)},

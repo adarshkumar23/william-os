@@ -10,6 +10,9 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
 import structlog
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import async_session_factory
 from app.core.events import Event, EventType, event_bus
 from app.modules.gamification.models import PersonalRecord, UserXP, WeeklyMomentum, XPEvent
@@ -22,8 +25,6 @@ from app.modules.gamification.schemas import (
 )
 from app.modules.sleep.models import SleepRecord
 from app.modules.study.models import StudySession
-from sqlalchemy import and_, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 _HANDLERS_REGISTERED = False
@@ -234,7 +235,12 @@ class GamificationService:
         if row:
             return row
 
-        row = UserXP(user_id=user_id, total_xp=0, level=1, last_updated=datetime.now(UTC).replace(tzinfo=None))
+        row = UserXP(
+            user_id=user_id,
+            total_xp=0,
+            level=1,
+            last_updated=datetime.now(UTC).replace(tzinfo=None),
+        )
         self.db.add(row)
         await self.db.flush()
         await self.db.refresh(row)

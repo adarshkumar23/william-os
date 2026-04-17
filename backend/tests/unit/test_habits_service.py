@@ -7,14 +7,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import select
+
 from app.modules.habits.models import Habit, HabitCheckIn, ProcrastinationSignal
 from app.modules.habits.schemas import HabitCheckInCreate, HabitCreate, HabitUpdate
 from app.modules.habits.service import HabitsService
 from app.shared.types import NotFoundError
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

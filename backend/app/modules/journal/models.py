@@ -10,11 +10,12 @@ import uuid
 from datetime import date
 from enum import Enum
 
-from app.core.database import Base
 from sqlalchemy import Date, ForeignKey, LargeBinary, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
 
 
 class JournalMood(str, Enum):

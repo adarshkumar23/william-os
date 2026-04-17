@@ -8,7 +8,8 @@ from __future__ import annotations
 import uuid
 from enum import Enum
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,10 +59,14 @@ class AuditLog(Base):
     __table_args__ = {"schema": "audit"}
 
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True,
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
     )
     action: Mapped[AuditAction] = mapped_column(
-        SAEnum(AuditAction, schema="audit"), nullable=False, index=True,
+        SAEnum(AuditAction, schema="audit"),
+        nullable=False,
+        index=True,
     )
     resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

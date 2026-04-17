@@ -189,9 +189,7 @@ def generate_all_schedules(self):
                     service = SchedulerService(db)
                     request = ScheduleGenerateRequest(target_date=user_tomorrow)
                     await service.generate_daily_plan(user.id, request)
-                    logger.info(
-                        "schedule_generated", user_id=str(user.id), date=str(user_tomorrow)
-                    )
+                    logger.info("schedule_generated", user_id=str(user.id), date=str(user_tomorrow))
                 except Exception as e:
                     logger.error(
                         "schedule_generation_failed",

@@ -1,4 +1,5 @@
 """WILLIAM OS - Scope enforcement middleware (C2 fix: reject unauth instead of bypass)."""
+
 from __future__ import annotations
 
 from fastapi.responses import ORJSONResponse
@@ -7,11 +8,26 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.security import decode_token_safe
 
 MODULE_SCOPE_BY_PATH = {
-    "schedule": "scheduler", "briefing": "briefing", "feed": "feed", "agents": "agents",
-    "rules": "rules", "gamification": "gamification", "habits": "habits", "journal": "journal",
-    "medicine": "medicine", "messaging": "messaging", "voice": "voice", "study": "study",
-    "fitness": "fitness", "trading": "trading", "sleep": "sleep", "decisions": "decisions",
-    "email": "email", "intelligence": "intelligence", "memory": "memory", "export": "export",
+    "schedule": "scheduler",
+    "briefing": "briefing",
+    "feed": "feed",
+    "agents": "agents",
+    "rules": "rules",
+    "gamification": "gamification",
+    "habits": "habits",
+    "journal": "journal",
+    "medicine": "medicine",
+    "messaging": "messaging",
+    "voice": "voice",
+    "study": "study",
+    "fitness": "fitness",
+    "trading": "trading",
+    "sleep": "sleep",
+    "decisions": "decisions",
+    "email": "email",
+    "intelligence": "intelligence",
+    "memory": "memory",
+    "export": "export",
 }
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -26,10 +42,22 @@ def default_scopes_for_role(role: str) -> list[str]:
     modules = list(MODULE_SCOPE_BY_PATH.values())
     if n == "family":
         scopes = [f"read:{m}" for m in modules]
-        scopes.extend([f"write:{m}" for m in [
-            "habits", "journal", "medicine", "study", "fitness",
-            "sleep", "decisions", "messaging", "rules",
-        ]])
+        scopes.extend(
+            [
+                f"write:{m}"
+                for m in [
+                    "habits",
+                    "journal",
+                    "medicine",
+                    "study",
+                    "fitness",
+                    "sleep",
+                    "decisions",
+                    "messaging",
+                    "rules",
+                ]
+            ]
+        )
         return scopes
     return [f"read:{m}" for m in modules]
 

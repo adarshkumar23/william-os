@@ -6,14 +6,18 @@ Unit tests for intent parsing, intent execution routing, and command logging.
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import select
+
 from app.modules.habits.schemas import HabitCreate
 from app.modules.habits.service import HabitsService
 from app.modules.voice.models import VoiceCommand
 from app.modules.voice.service import VoiceService
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

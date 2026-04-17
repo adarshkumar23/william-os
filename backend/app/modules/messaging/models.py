@@ -8,10 +8,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from app.core.database import Base
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
 
 
 def _default_notification_preferences() -> dict[str, bool]:

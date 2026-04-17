@@ -5,11 +5,13 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import desc, func, select
 
 from app.core.events import Event, EventType, event_bus
-from app.core.security import hash_token
+from app.core.security import decode_token, hash_token
 from app.modules.auth.models import ApiKey
-from app.core.security import decode_token
 from app.modules.decisions.schemas import DecisionChoose, DecisionCreate, DecisionOutcome
 from app.modules.decisions.service import DecisionService
 from app.modules.fitness.schemas import WorkoutLogCreate
@@ -56,8 +58,9 @@ from app.modules.study.service import StudyService
 from app.modules.trading.schemas import TradeLogCreate
 from app.modules.trading.service import TradingService
 from app.shared.types import AuthenticationError, NotFoundError, ValidationError
-from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class IntegrationsService:
@@ -72,8 +75,6 @@ class IntegrationsService:
             return await self._authenticate_api_key(token)
         # M19: decode JWT directly to avoid importing from auth.routes (layering violation)
         try:
-            from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
-
             payload = decode_token(token)
             user_id = uuid.UUID(str(payload["sub"]))
         except Exception as exc:

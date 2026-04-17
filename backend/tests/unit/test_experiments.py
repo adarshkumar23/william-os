@@ -8,12 +8,14 @@ import uuid
 from typing import TYPE_CHECKING
 
 import pytest
+
 from app.core.experiments import assign_variant
 from app.core.security import create_access_token
 
 if TYPE_CHECKING:
-    from app.modules.auth.models import User
     from httpx import AsyncClient
+
+    from app.modules.auth.models import User
 
 
 def test_assign_variant_is_deterministic() -> None:

@@ -6,9 +6,10 @@ Unit tests for degraded mode, mutation replay queue, and cached GET fallback.
 from __future__ import annotations
 
 import pytest
-from app.core.offline import OfflineFallbackMiddleware, ReplayQueue
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+
+from app.core.offline import OfflineFallbackMiddleware, ReplayQueue
 
 
 def _build_app(

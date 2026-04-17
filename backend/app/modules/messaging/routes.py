@@ -7,14 +7,15 @@ from __future__ import annotations
 
 import uuid
 
+from fastapi import APIRouter, Body, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.messaging.bot import telegram_bot_handler
 from app.modules.messaging.schemas import NotificationPayload, TelegramLinkRequest
 from app.modules.messaging.service import MessagingService
 from app.shared.types import success
-from fastapi import APIRouter, Body, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/messaging", tags=["Messaging"])
 

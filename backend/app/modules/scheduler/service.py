@@ -10,10 +10,13 @@ import json
 import time as time_module
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.memory.service import MemoryService
@@ -33,9 +36,9 @@ from app.modules.scheduler.schemas import (
     ScheduleGenerateRequest,
 )
 from app.shared.types import NotFoundError, ValidationError
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 SCHEDULE_GENERATION_PROMPT = """You are WILLIAM OS, a personal AI operating system.

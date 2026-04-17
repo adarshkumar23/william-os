@@ -9,10 +9,11 @@ import uuid
 from datetime import date, datetime
 
 import structlog
-from app.core.database import Base
 from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
 
 logger = structlog.get_logger(__name__)
 

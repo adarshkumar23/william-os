@@ -7,15 +7,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
 from app.core.events import Event, EventType, event_bus
 from app.modules.audit.models import AuditAction, AuditLog
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 # Map event types to audit actions
@@ -85,9 +87,13 @@ class AuditService:
         if module_filter:
             query = query.where(AuditLog.module == module_filter)
         if date_from:
-            query = query.where(AuditLog.created_at >= datetime.combine(date_from, datetime.min.time()))
+            query = query.where(
+                AuditLog.created_at >= datetime.combine(date_from, datetime.min.time())
+            )
         if date_to:
-            query = query.where(AuditLog.created_at <= datetime.combine(date_to, datetime.max.time()))
+            query = query.where(
+                AuditLog.created_at <= datetime.combine(date_to, datetime.max.time())
+            )
 
         query = query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
         result = await self.db.execute(query)
@@ -106,7 +112,9 @@ class AuditService:
 
     async def get_stats(self, user_id: uuid.UUID, days: int = 30) -> dict:
         """Aggregate audit stats for dashboard."""
-        cutoff = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None) - timedelta(days=days)
+        cutoff = datetime.now(UTC).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=None
+        ) - timedelta(days=days)
         result = await self.db.execute(
             select(AuditLog.action, func.count())
             .where(and_(AuditLog.user_id == user_id, AuditLog.created_at >= cutoff))

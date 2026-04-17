@@ -10,10 +10,11 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
-from app.core.config import get_settings
-from app.core.rate_limit import RateLimitMiddleware
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+
+from app.core.config import get_settings
+from app.core.rate_limit import RateLimitMiddleware
 
 
 class _FakePipeline:
@@ -122,6 +123,7 @@ class _FakeRedis:
     @staticmethod
     def _now() -> int:
         return int(datetime.now(UTC).timestamp())
+
 
 def _build_test_app(
     *,

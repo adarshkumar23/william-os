@@ -10,10 +10,13 @@ import json
 import time
 import uuid
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
+from sqlalchemy import and_, func, select
+
 from app.core.config import get_settings
 from app.modules.habits.models import Habit
 from app.modules.habits.schemas import HabitCheckInCreate
@@ -26,9 +29,9 @@ from app.modules.scheduler.schemas import RescheduleRequest
 from app.modules.scheduler.service import SchedulerService
 from app.modules.voice.models import VoiceCommand
 from app.modules.voice.schemas import VoiceCommandLogResponse, VoiceCommandResponse
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 INTENT_PROMPT = (

@@ -8,6 +8,8 @@ from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import desc, func, select
+
 from app.modules.agents.base import AgentContext, BaseAgent
 from app.modules.agents.models import AgentActionLog, AgentRecommendationLog, AgentStatus
 from app.modules.agents.schemas import AgentAction, AgentRecommendation
@@ -15,18 +17,16 @@ from app.modules.audit.models import AuditAction, AuditLog
 from app.modules.decisions.models import Decision
 from app.modules.fitness.models import WorkoutLog
 from app.modules.habits.models import ProcrastinationSignal
-from app.modules.memory.service import MemoryService
 from app.modules.medicine.models import Medicine, MedicineLog
+from app.modules.memory.service import MemoryService
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
-from app.modules.scheduler.models import DailyPlan, ScheduleBlock
-from app.modules.scheduler.models import BlockCategory
+from app.modules.scheduler.models import BlockCategory, DailyPlan, ScheduleBlock
 from app.modules.scheduler.schemas import RescheduleRequest
 from app.modules.scheduler.service import SchedulerService
 from app.modules.sleep.models import SleepDebt, SleepRecord
 from app.modules.study.models import RevisionCard, StudySession
 from app.modules.trading.models import PortfolioSnapshot, TradeLog
-from sqlalchemy import desc, func, select
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,7 +70,10 @@ class _HeuristicAgent(BaseAgent):
         return AgentAction(
             agent_name=recommendation.agent_name,
             action_type="notify",
-            details={"notification_id": str(in_app.id), "recommended_action": recommendation.recommended_action},
+            details={
+                "notification_id": str(in_app.id),
+                "recommended_action": recommendation.recommended_action,
+            },
             success=True,
         )
 
@@ -98,7 +101,9 @@ class HealthAgent(_HeuristicAgent):
         missed = int(missed_result.scalar() or 0)
 
         sleep_result = await self.db.execute(
-            select(func.avg(SleepRecord.sleep_quality), func.avg(SleepRecord.sleep_duration_minutes))
+            select(
+                func.avg(SleepRecord.sleep_quality), func.avg(SleepRecord.sleep_duration_minutes)
+            )
             .where(SleepRecord.user_id == context.user_id)
             .where(SleepRecord.sleep_date >= seven_days)
         )
@@ -138,13 +143,18 @@ class HealthAgent(_HeuristicAgent):
             severity=severity,
             urgency=min(100, urgency),
             recommended_action="reduce intensity and restore sleep/medication consistency",
-            context={"missed_medication_7d": missed, "sleep_quality_7d": round(quality, 2), "sleep_minutes_7d": round(duration, 2), "workouts_3d": workout_3d},
+            context={
+                "missed_medication_7d": missed,
+                "sleep_quality_7d": round(quality, 2),
+                "sleep_minutes_7d": round(duration, 2),
+                "workouts_3d": workout_3d,
+            },
         )
 
 
 class StudyAgent(_HeuristicAgent):
     name = "study"
-    description = "Monitors consistency, cramming risk, and burnout for study." 
+    description = "Monitors consistency, cramming risk, and burnout for study."
     memory = "study"
     goals = ["maintain consistency", "avoid cramming", "prevent burnout"]
     permissions = ["notify", "recommend"]
@@ -271,8 +281,7 @@ class ExecutiveAgent(_HeuristicAgent):
         buffer_count = 0
         if plan_ids:
             block_result = await self.db.execute(
-                select(ScheduleBlock.category)
-                .where(ScheduleBlock.plan_id.in_(plan_ids))
+                select(ScheduleBlock.category).where(ScheduleBlock.plan_id.in_(plan_ids))
             )
             categories = [item for item in block_result.scalars().all()]
             block_count = len(categories)
@@ -307,13 +316,17 @@ class ExecutiveAgent(_HeuristicAgent):
             severity="high" if urgency >= 65 else "medium",
             urgency=min(100, urgency),
             recommended_action="rebalance schedule and protect buffer windows",
-            context={"today_block_count": block_count, "buffer_blocks": buffer_count, "deadlines_48h": deadlines_48h},
+            context={
+                "today_block_count": block_count,
+                "buffer_blocks": buffer_count,
+                "deadlines_48h": deadlines_48h,
+            },
         )
 
 
 class RecoveryAgent(_HeuristicAgent):
     name = "recovery"
-    description = "Monitors burnout, procrastination spirals, and mood decline." 
+    description = "Monitors burnout, procrastination spirals, and mood decline."
     memory = "recovery"
     goals = ["interrupt spirals", "protect recovery windows"]
     permissions = ["notify", "recommend", "reschedule"]
@@ -358,7 +371,10 @@ class RecoveryAgent(_HeuristicAgent):
             severity="high" if urgency >= 60 else "medium",
             urgency=min(100, urgency),
             recommended_action="activate a light recovery routine and trim workload today",
-            context={"procrastination_signals_7d": procrastination_hits, "sleep_debt_hours": debt_hours},
+            context={
+                "procrastination_signals_7d": procrastination_hits,
+                "sleep_debt_hours": debt_hours,
+            },
         )
 
 
@@ -381,7 +397,16 @@ class OrchestratorAgentService:
     async def run_for_user(self, user_id: uuid.UUID) -> dict:
         memory_text = await self.memory_service.get_relevant_memory_context(
             user_id=user_id,
-            modules=["sleep", "medicine", "fitness", "study", "trading", "scheduler", "habits", "journal"],
+            modules=[
+                "sleep",
+                "medicine",
+                "fitness",
+                "study",
+                "trading",
+                "scheduler",
+                "habits",
+                "journal",
+            ],
             limit=8,
         )
         context = AgentContext(user_id=user_id, memory=memory_text)
@@ -389,24 +414,36 @@ class OrchestratorAgentService:
         bundles: list[_RecommendationBundle] = []
         for agent in self._agent_instances():
             recommendation = await agent.analyze(context)
-            await self._upsert_agent_status(user_id=user_id, agent=agent, recommendation=recommendation)
+            await self._upsert_agent_status(
+                user_id=user_id, agent=agent, recommendation=recommendation
+            )
             if recommendation is None:
                 continue
-            log_row = await self._create_recommendation_log(user_id=user_id, recommendation=recommendation)
+            log_row = await self._create_recommendation_log(
+                user_id=user_id, recommendation=recommendation
+            )
             bundles.append(_RecommendationBundle(recommendation=recommendation))
             await self._log_audit(
                 user_id=user_id,
-                details={"event": "agent_recommendation", "agent": agent.name, "recommendation_id": str(log_row.id)},
+                details={
+                    "event": "agent_recommendation",
+                    "agent": agent.name,
+                    "recommendation_id": str(log_row.id),
+                },
             )
 
         bundles.sort(key=lambda bundle: bundle.recommendation.urgency, reverse=True)
         executed = None
         if bundles:
             top = bundles[0]
-            executed = await self._execute_top_recommendation(user_id=user_id, recommendation=top.recommendation)
+            executed = await self._execute_top_recommendation(
+                user_id=user_id, recommendation=top.recommendation
+            )
 
         return {
-            "recommendations": [bundle.recommendation.model_dump(mode="json") for bundle in bundles],
+            "recommendations": [
+                bundle.recommendation.model_dump(mode="json") for bundle in bundles
+            ],
             "executed_action": executed.model_dump(mode="json") if executed else None,
         }
 
@@ -435,14 +472,18 @@ class OrchestratorAgentService:
         if agent is None:
             return {"found": False, "agent": agent_name}
 
-        memory_text = await self.memory_service.get_relevant_memory_context(user_id=user_id, limit=6)
+        memory_text = await self.memory_service.get_relevant_memory_context(
+            user_id=user_id, limit=6
+        )
         recommendation = await agent.analyze(AgentContext(user_id=user_id, memory=memory_text))
         await self._upsert_agent_status(user_id=user_id, agent=agent, recommendation=recommendation)
         if recommendation is None:
             return {"found": True, "agent": agent_name, "recommendation": None, "action": None}
 
         await self._create_recommendation_log(user_id=user_id, recommendation=recommendation)
-        action = await self._execute_top_recommendation(user_id=user_id, recommendation=recommendation)
+        action = await self._execute_top_recommendation(
+            user_id=user_id, recommendation=recommendation
+        )
         return {
             "found": True,
             "agent": agent_name,
@@ -458,7 +499,9 @@ class OrchestratorAgentService:
         )
         return list(result.scalars().all())
 
-    async def list_recommendations(self, user_id: uuid.UUID, limit: int = 20) -> list[AgentRecommendationLog]:
+    async def list_recommendations(
+        self, user_id: uuid.UUID, limit: int = 20
+    ) -> list[AgentRecommendationLog]:
         result = await self.db.execute(
             select(AgentRecommendationLog)
             .where(AgentRecommendationLog.user_id == user_id)
@@ -478,7 +521,9 @@ class OrchestratorAgentService:
 
         try:
             if recommendation.urgency >= 70:
-                action = await self._apply_high_urgency_response(user_id=user_id, recommendation=recommendation)
+                action = await self._apply_high_urgency_response(
+                    user_id=user_id, recommendation=recommendation
+                )
             else:
                 action = await self._notify_only(user_id=user_id, recommendation=recommendation)
         except Exception as exc:
@@ -492,9 +537,15 @@ class OrchestratorAgentService:
                 error=error_text,
             )
 
-        await self._create_action_log(user_id=user_id, action=action, success=success, error=error_text)
-        await self._mark_latest_recommendation_executed(user_id=user_id, agent_name=recommendation.agent_name, success=success)
-        await self._update_status_action(user_id=user_id, agent_name=recommendation.agent_name, action=action)
+        await self._create_action_log(
+            user_id=user_id, action=action, success=success, error=error_text
+        )
+        await self._mark_latest_recommendation_executed(
+            user_id=user_id, agent_name=recommendation.agent_name, success=success
+        )
+        await self._update_status_action(
+            user_id=user_id, agent_name=recommendation.agent_name, action=action
+        )
         await self._log_audit(
             user_id=user_id,
             details={
@@ -508,7 +559,9 @@ class OrchestratorAgentService:
 
         return action
 
-    async def _notify_only(self, user_id: uuid.UUID, recommendation: AgentRecommendation) -> AgentAction:
+    async def _notify_only(
+        self, user_id: uuid.UUID, recommendation: AgentRecommendation
+    ) -> AgentAction:
         payload = NotificationPayload(
             title=f"{recommendation.agent_name.capitalize()} Agent",
             body=recommendation.summary,
@@ -581,7 +634,13 @@ class OrchestratorAgentService:
         status_value = "idle"
         rec_payload = {}
         if recommendation:
-            status_value = "critical" if recommendation.urgency >= 80 else "warning" if recommendation.urgency >= 50 else "stable"
+            status_value = (
+                "critical"
+                if recommendation.urgency >= 80
+                else "warning"
+                if recommendation.urgency >= 50
+                else "stable"
+            )
             rec_payload = recommendation.model_dump(mode="json")
 
         if row is None:
@@ -662,7 +721,9 @@ class OrchestratorAgentService:
         row.is_active = False
         await self.db.flush()
 
-    async def _update_status_action(self, user_id: uuid.UUID, agent_name: str, action: AgentAction) -> None:
+    async def _update_status_action(
+        self, user_id: uuid.UUID, agent_name: str, action: AgentAction
+    ) -> None:
         result = await self.db.execute(
             select(AgentStatus)
             .where(AgentStatus.user_id == user_id)

@@ -6,11 +6,15 @@ Unit tests for create, analyze, choose, outcome, and quality stats.
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.modules.decisions.schemas import DecisionChoose, DecisionCreate, DecisionOutcome
 from app.modules.decisions.service import DecisionService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

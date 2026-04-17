@@ -8,11 +8,12 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from app.modules.chat.models import AgentName, MessageRole
 from pydantic import BaseModel, Field
 
+from app.modules.chat.models import AgentName, MessageRole
 
 # ── Request Schemas ──────────────────────────────────────────────
+
 
 class ChatSessionCreate(BaseModel):
     agent_name: AgentName = AgentName.OS
@@ -24,6 +25,7 @@ class ChatMessageCreate(BaseModel):
 
 
 # ── Response Schemas ─────────────────────────────────────────────
+
 
 class ChatMessageResponse(BaseModel):
     id: UUID

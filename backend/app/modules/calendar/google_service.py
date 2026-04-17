@@ -4,6 +4,9 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 
 import requests
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.modules.scheduler.models import (
     BlockCategory,
     BlockStatus,
@@ -11,8 +14,6 @@ from app.modules.scheduler.models import (
     PlanStatus,
     ScheduleBlock,
 )
-from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import CachedEvent, GoogleToken
 

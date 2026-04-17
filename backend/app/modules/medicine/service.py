@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
+
 from app.core.events import Event, EventType, event_bus
 from app.modules.medicine.models import Medicine, MedicineLog
 from app.modules.medicine.schemas import (
@@ -20,10 +24,9 @@ from app.modules.medicine.schemas import (
     UpcomingReminder,
 )
 from app.shared.types import NotFoundError, ValidationError
-from sqlalchemy import and_, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 
@@ -118,7 +121,9 @@ class MedicineService:
         )
         log = existing_result.scalar_one_or_none()
 
-        taken_at = datetime.now(UTC).replace(tzinfo=None).time().replace(microsecond=0) if taken else None
+        taken_at = (
+            datetime.now(UTC).replace(tzinfo=None).time().replace(microsecond=0) if taken else None
+        )
 
         if log:
             log.taken = taken

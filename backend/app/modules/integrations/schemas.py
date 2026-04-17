@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
-from typing import Literal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from app.modules.journal.models import JournalMood
 from pydantic import BaseModel, Field
+
+from app.modules.journal.models import JournalMood
 
 
 class IntegrationSleepIn(BaseModel):

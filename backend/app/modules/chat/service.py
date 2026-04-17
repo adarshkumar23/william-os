@@ -8,15 +8,16 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
 from time import perf_counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
+from sqlalchemy import desc, select
+
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
 from app.modules.auth.service import AuthService
@@ -37,8 +38,11 @@ from app.modules.sleep.models import SleepRecord
 from app.modules.sleep.service import SleepService
 from app.modules.study.service import StudyService
 from app.modules.trading.service import TradingService
-from sqlalchemy import desc, select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 ACTION_TAG_PATTERN = re.compile(r"<action>\s*(.*?)\s*</action>", re.DOTALL)

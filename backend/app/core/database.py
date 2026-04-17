@@ -3,12 +3,13 @@ H2 fix: get_db no longer auto-commits. Services must commit explicitly.
 H3 fix: init_db is gated by env flag WILLIAM_ENABLE_CREATE_ALL (off by default);
         prefer running `alembic upgrade head` in dev too.
 """
+
 from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import AsyncGenerator
 
 from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -46,8 +47,10 @@ class Base(DeclarativeBase):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        onupdate=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     def __repr__(self) -> str:

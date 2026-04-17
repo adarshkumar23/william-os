@@ -7,11 +7,12 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import select
+
 from app.modules.auth.models import User
 from app.modules.decisions.models import Decision
 from app.modules.gamification.models import XPEvent
 from app.modules.intelligence.models import LifeScore
-from sqlalchemy import select
 
 if TYPE_CHECKING:
     from httpx import AsyncClient

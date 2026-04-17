@@ -8,6 +8,9 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
+from fastapi import APIRouter, Body, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.fitness.schemas import (
@@ -18,8 +21,6 @@ from app.modules.fitness.schemas import (
 )
 from app.modules.fitness.service import FitnessService
 from app.shared.types import success
-from fastapi import APIRouter, Body, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/fitness", tags=["Fitness Intelligence"])
 

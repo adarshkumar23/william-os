@@ -7,9 +7,10 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import jwt
+from google_auth_oauthlib.flow import Flow
+
 from app.core.config import get_settings
 from app.shared.types import AuthenticationError, ValidationError
-from google_auth_oauthlib.flow import Flow
 
 settings = get_settings()
 

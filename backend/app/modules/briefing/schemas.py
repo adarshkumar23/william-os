@@ -5,8 +5,9 @@ Response contracts for daily unified briefing APIs.
 
 from datetime import date, datetime
 
-from app.modules.messaging.schemas import NotificationLogResponse
 from pydantic import BaseModel, Field
+
+from app.modules.messaging.schemas import NotificationLogResponse
 
 
 class BriefingScheduleItem(BaseModel):

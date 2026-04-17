@@ -4,6 +4,7 @@ All services should route HTTP calls to external LLMs/APIs through these helpers
 which provide: (a) exponential backoff with jitter on 5xx/timeout/network errors,
 (b) a typed error on permanent failure, (c) a single place to observe latency.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,7 @@ _DEFAULT_TIMEOUT = 30.0
 
 def _backoff(attempt: int) -> float:
     """Exponential backoff + full jitter (AWS-style)."""
-    base = 0.5 * (2 ** attempt)  # 0.5s, 1s, 2s, 4s
+    base = 0.5 * (2**attempt)  # 0.5s, 1s, 2s, 4s
     return random.uniform(0, min(base, 8.0))
 
 
@@ -45,8 +46,9 @@ async def http_post_json(
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(url, headers=headers, json=json)
             if 500 <= resp.status_code < 600:
-                raise httpx.HTTPStatusError(f"server {resp.status_code}",
-                                           request=resp.request, response=resp)
+                raise httpx.HTTPStatusError(
+                    f"server {resp.status_code}", request=resp.request, response=resp
+                )
             if resp.status_code >= 400:
                 # 4xx is permanent — don't retry
                 raise AIError(f"http_{resp.status_code}: {resp.text[:200]}")
@@ -61,21 +63,32 @@ async def http_post_json(
             if attempt >= retries:
                 break
             delay = _backoff(attempt)
-            logger.warning("ai_call_retry", url=url, attempt=attempt + 1,
-                         delay_seconds=round(delay, 2), error=str(exc))
+            logger.warning(
+                "ai_call_retry",
+                url=url,
+                attempt=attempt + 1,
+                delay_seconds=round(delay, 2),
+                error=str(exc),
+            )
             await asyncio.sleep(delay)
     raise AIError(f"retries exhausted: {last_exc}") from last_exc
 
 
 async def call_gemini(
-    *, api_key: str, model: str, prompt: str,
-    max_tokens: int = 4096, temperature: float = 0.7,
+    *,
+    api_key: str,
+    model: str,
+    prompt: str,
+    max_tokens: int = 4096,
+    temperature: float = 0.7,
     response_mime_type: str | None = "application/json",
 ) -> str:
     """Call Gemini generateContent with retries. Returns the text part."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     gen_config: dict[str, Any] = {
-        "temperature": temperature, "topP": 0.9, "maxOutputTokens": max_tokens,
+        "temperature": temperature,
+        "topP": 0.9,
+        "maxOutputTokens": max_tokens,
     }
     if response_mime_type:
         gen_config["responseMimeType"] = response_mime_type
@@ -91,10 +104,15 @@ async def call_gemini(
 
 
 async def call_llm_json_compat(
-    *, provider: str, model: str, api_key: str,
+    *,
+    provider: str,
+    model: str,
+    api_key: str,
     messages: list[dict[str, str]],
-    max_tokens: int = 512, temperature: float = 0.2,
-    base_url: str = "", app_name: str = "",
+    max_tokens: int = 512,
+    temperature: float = 0.2,
+    base_url: str = "",
+    app_name: str = "",
 ) -> str:
     """Call an OpenAI-compatible chat endpoint (OpenRouter/OpenAI/etc.) with retries."""
     if provider == "openrouter":
@@ -111,10 +129,16 @@ async def call_llm_json_compat(
     else:
         raise AIError(f"unsupported provider: {provider}")
 
-    data = await http_post_json(url, headers=headers, json={
-        "model": model, "messages": messages,
-        "max_tokens": max_tokens, "temperature": temperature,
-    })
+    data = await http_post_json(
+        url,
+        headers=headers,
+        json={
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        },
+    )
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as exc:

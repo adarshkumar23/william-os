@@ -1,8 +1,10 @@
 """WILLIAM OS — Email Service"""
-import smtplib
+
 import os
-from email.mime.text import MIMEText
+import smtplib
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -64,7 +66,7 @@ async def send_morning_briefing_email(to: str, name: str, briefing_text: str) ->
         <h1 style="color: #3b82f6;">WILLIAM OS</h1>
         <h2>Morning Briefing</h2>
         <div style="background: #1e293b; padding: 20px; border-radius: 8px; line-height: 1.6;">
-            {briefing_text.replace(chr(10), '<br>')}
+            {briefing_text.replace(chr(10), "<br>")}
         </div>
         <p style="color: #94a3b8; font-size: 12px; margin-top: 20px;">
             View full dashboard at <a href="https://williamos.duckdns.org" style="color: #3b82f6;">williamos.duckdns.org</a>
@@ -74,7 +76,9 @@ async def send_morning_briefing_email(to: str, name: str, briefing_text: str) ->
     return await send_email(to, subject, body_html, briefing_text)
 
 
-async def send_medicine_reminder(to: str, name: str, medicine_name: str, dose: str, time: str) -> bool:
+async def send_medicine_reminder(
+    to: str, name: str, medicine_name: str, dose: str, time: str
+) -> bool:
     subject = f"💊 Medicine Reminder — {medicine_name}"
     body_html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #e2e8f0; padding: 40px; border-radius: 12px;">
@@ -95,18 +99,28 @@ async def send_medicine_reminder(to: str, name: str, medicine_name: str, dose: s
 
 
 async def send_daily_calendar(to: str, name: str, events: list, habits: list) -> bool:
-    subject = f"📅 Today's Schedule — William OS"
-    
-    events_html = "".join([
-        f'<li style="padding: 8px 0; border-bottom: 1px solid #334155;">'
-        f'<strong>{e.get("title","")}</strong> at {e.get("start","")}</li>'
-        for e in events
-    ]) or "<li>No events today</li>"
-    
-    habits_html = "".join([
-        f'<li style="padding: 8px 0; border-bottom: 1px solid #334155;">☐ {h}</li>'
-        for h in habits
-    ]) or "<li>No habits due</li>"
+    subject = "📅 Today's Schedule — William OS"
+
+    events_html = (
+        "".join(
+            [
+                f'<li style="padding: 8px 0; border-bottom: 1px solid #334155;">'
+                f"<strong>{e.get('title', '')}</strong> at {e.get('start', '')}</li>"
+                for e in events
+            ]
+        )
+        or "<li>No events today</li>"
+    )
+
+    habits_html = (
+        "".join(
+            [
+                f'<li style="padding: 8px 0; border-bottom: 1px solid #334155;">☐ {h}</li>'
+                for h in habits
+            ]
+        )
+        or "<li>No habits due</li>"
+    )
 
     body_html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #e2e8f0; padding: 40px; border-radius: 12px;">

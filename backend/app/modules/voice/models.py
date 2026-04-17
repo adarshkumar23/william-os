@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import uuid
 
-from app.core.database import Base
 from sqlalchemy import Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
 
 
 class VoiceCommand(Base):

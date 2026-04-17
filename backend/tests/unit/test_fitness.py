@@ -6,11 +6,15 @@ Unit tests for metrics ingestion, summaries, forecast generation, and workout lo
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.modules.fitness.schemas import HealthMetricCreate, WorkoutLogCreate
 from app.modules.fitness.service import FitnessService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

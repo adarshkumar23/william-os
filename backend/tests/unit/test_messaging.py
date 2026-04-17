@@ -5,10 +5,15 @@ Unit tests for Telegram linking and notification logging behavior.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
+
 from app.modules.messaging.schemas import NotificationPayload
 from app.modules.messaging.service import MessagingService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

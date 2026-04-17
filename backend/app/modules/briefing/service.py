@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
+from sqlalchemy import select
+
 from app.core.config import get_settings
 from app.core.metrics import observe_ai_call
 from app.modules.briefing.schemas import (
@@ -41,7 +43,6 @@ from app.modules.sleep.models import SleepRecord
 from app.modules.sleep.service import SleepService
 from app.modules.study.models import MockTest, RevisionCard, Subject
 from app.modules.trading.service import TradingService
-from sqlalchemy import select
 
 if TYPE_CHECKING:
     from uuid import UUID

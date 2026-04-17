@@ -6,13 +6,17 @@ Unit tests for encrypted journal workflows.
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.modules.journal.models import JournalMood
 from app.modules.journal.schemas import JournalCreate
 from app.modules.journal.service import JournalService
 from app.shared.types import EncryptionError, NotFoundError
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

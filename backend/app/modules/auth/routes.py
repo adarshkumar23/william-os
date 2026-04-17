@@ -6,8 +6,12 @@ Registration, login, token refresh, profile management.
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 
 import structlog
+from fastapi import APIRouter, Depends, Header, Request, Response
+from pydantic import BaseModel, Field
+
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import decode_token
@@ -25,9 +29,9 @@ from app.modules.auth.schemas import (
 )
 from app.modules.auth.service import AuthService
 from app.shared.types import success
-from fastapi import APIRouter, Depends, Header, Request, Response
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -61,9 +65,10 @@ async def get_current_user_id(
     db: AsyncSession = Depends(get_db),
 ) -> uuid.UUID:
     """Extract and validate user ID from JWT or permanent API key."""
+    from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+
     from app.core.security import hash_api_key
     from app.shared.types import AuthenticationError
-    from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
     if not authorization.startswith("Bearer "):
         raise AuthenticationError("Invalid authorization header")
@@ -317,8 +322,9 @@ async def create_api_key(
 ) -> dict:
     import secrets
 
-    from app.core.security import hash_api_key
     from sqlalchemy import text
+
+    from app.core.security import hash_api_key
 
     raw_key = f"wos-{secrets.token_hex(24)}"
     key_hash = hash_api_key(raw_key)

@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Any, Generic, TypeVar
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from pydantic import BaseModel
 
 T = TypeVar("T")
@@ -17,8 +16,10 @@ T = TypeVar("T")
 
 # ── API Response Envelope ────────────────────────────────────────
 
+
 class APIResponse(BaseModel, Generic[T]):
     """Every API response uses this envelope."""
+
     ok: bool = True
     data: T | None = None
     error: str | None = None
@@ -35,6 +36,7 @@ def error(message: str, meta: dict | None = None) -> dict:
 
 # ── Pagination ───────────────────────────────────────────────────
 
+
 class CursorPage(BaseModel, Generic[T]):
     items: list[T]
     next_cursor: str | None = None
@@ -44,8 +46,10 @@ class CursorPage(BaseModel, Generic[T]):
 
 # ── Custom Exceptions ────────────────────────────────────────────
 
+
 class WilliamError(Exception):
     """Base exception for WILLIAM OS."""
+
     def __init__(self, message: str, code: str = "INTERNAL_ERROR"):
         self.message = message
         self.code = code
@@ -83,6 +87,7 @@ class EncryptionError(WilliamError):
 
 
 # ── Common Schemas ───────────────────────────────────────────────
+
 
 class HealthCheck(BaseModel):
     status: str = "ok"

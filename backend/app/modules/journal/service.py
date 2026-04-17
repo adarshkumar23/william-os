@@ -10,10 +10,13 @@ import secrets
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 import httpx
 import redis.asyncio as redis
 import structlog
+from sqlalchemy import and_, select
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call
@@ -27,9 +30,9 @@ from app.modules.journal.schemas import (
     JournalMetadata,
 )
 from app.shared.types import EncryptionError, NotFoundError
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 _JOURNAL_UNLOCK_TTL_MINUTES = 30

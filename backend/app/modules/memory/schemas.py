@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from app.modules.memory.models import MemoryType
 from pydantic import BaseModel
+
+from app.modules.memory.models import MemoryType
 
 
 class UserMemoryResponse(BaseModel):

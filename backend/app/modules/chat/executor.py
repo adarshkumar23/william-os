@@ -8,10 +8,10 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, date, datetime, time
-from typing import Any
-from uuid import UUID
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
 from app.core.events import Event, EventType, event_bus
 from app.modules.briefing.service import MorningBriefingService
 from app.modules.chat.prompts import ActionItem, ActionResult
@@ -24,7 +24,11 @@ from app.modules.scheduler.schemas import ScheduleGenerateRequest
 from app.modules.scheduler.service import SchedulerService
 from app.modules.sleep.schemas import SleepRecordCreate
 from app.modules.sleep.service import SleepService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

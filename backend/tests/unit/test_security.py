@@ -6,6 +6,7 @@ Tests for JWT tokens, password hashing, and AES-256-GCM encryption.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 
 import pytest
 
@@ -59,15 +60,17 @@ class TestJWT:
         assert payload["type"] == "refresh"
 
     def test_expired_token_rejected(self):
+        from datetime import datetime, timedelta
+
         import jwt as pyjwt
-        from datetime import datetime, timedelta, timezone
 
         payload = {
             "sub": str(uuid.uuid4()),
-            "exp": datetime.now(timezone.utc) - timedelta(hours=1),
+            "exp": datetime.now(UTC) - timedelta(hours=1),
             "type": "access",
         }
         from app.core.config import get_settings
+
         settings = get_settings()
         token = pyjwt.encode(payload, settings.jwt_secret_key.get_secret_value(), algorithm="HS256")
         with pytest.raises(pyjwt.ExpiredSignatureError):

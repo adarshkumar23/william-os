@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
+from sqlalchemy import select
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.core.metrics import observe_ai_call, set_life_score
@@ -44,7 +46,6 @@ from app.modules.study.models import StudySession
 from app.modules.study.service import StudyService
 from app.modules.trading.models import TradeLog
 from app.modules.trading.service import TradingService
-from sqlalchemy import select
 
 if TYPE_CHECKING:
     import uuid

@@ -9,6 +9,11 @@ import json
 import uuid
 from typing import Any
 
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.modules.auth.routes import get_current_user_id
 from app.modules.chat.proactive import ProactiveMessageService
@@ -21,10 +26,6 @@ from app.modules.chat.schemas import (
 )
 from app.modules.chat.service import ChatService
 from app.shared.types import success
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 

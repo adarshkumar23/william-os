@@ -12,6 +12,9 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import structlog
+from sqlalchemy import and_, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.events import Event, EventType, event_bus
 from app.modules.memory.service import MemoryService
@@ -42,8 +45,6 @@ from app.modules.study.schemas import (
     SubjectUpdate,
 )
 from app.shared.types import NotFoundError
-from sqlalchemy import and_, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 

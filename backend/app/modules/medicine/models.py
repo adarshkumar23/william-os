@@ -9,7 +9,6 @@ import uuid
 from datetime import date, time
 from enum import Enum
 
-from app.core.database import Base
 from sqlalchemy import (
     Boolean,
     Date,
@@ -25,6 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
 
 
 class MedicineType(str, Enum):

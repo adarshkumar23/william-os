@@ -5,9 +5,14 @@ Unit tests for account linking, syncing summaries, and morning briefing assembly
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
+
 from app.modules.email_intel.service import EmailIntelService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

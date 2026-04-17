@@ -1,18 +1,19 @@
 """WILLIAM OS — Security utilities.
 Cleaned version (M1): no HTTPException raised from core; `decode_token_safe` added for middleware.
 """
+
 from __future__ import annotations
 
 import base64
 import hashlib
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
@@ -30,25 +31,33 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(user_id: uuid.UUID, extra_claims: dict | None = None) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "exp": now + timedelta(minutes=settings.jwt_access_token_expire_minutes),
-        "iat": now, "type": "access", "jti": uuid.uuid4().hex,
+        "iat": now,
+        "type": "access",
+        "jti": uuid.uuid4().hex,
     }
     if extra_claims:
         payload.update(extra_claims)
-    return jwt.encode(payload, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        payload, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
+    )
 
 
 def create_refresh_token(user_id: uuid.UUID) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "exp": now + timedelta(days=settings.jwt_refresh_token_expire_days),
-        "iat": now, "type": "refresh", "jti": uuid.uuid4().hex,
+        "iat": now,
+        "type": "refresh",
+        "jti": uuid.uuid4().hex,
     }
-    return jwt.encode(payload, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        payload, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
+    )
 
 
 def decode_token(token: str) -> dict:
@@ -71,8 +80,9 @@ def decode_token_safe(token: str) -> dict | None:
 
 
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
-    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
-                    iterations=settings.encryption_iterations)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(), length=32, salt=salt, iterations=settings.encryption_iterations
+    )
     return kdf.derive(passphrase.encode("utf-8"))
 
 

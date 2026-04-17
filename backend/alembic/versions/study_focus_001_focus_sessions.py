@@ -8,6 +8,7 @@ Create Date: 2026-04-16
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "study_focus_001"
@@ -28,10 +29,22 @@ def upgrade() -> None:
         sa.Column("distraction_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("focus_score", sa.Float(), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("status", sa.String(length=20), server_default=sa.text("'active'"), nullable=False),
+        sa.Column(
+            "status", sa.String(length=20), server_default=sa.text("'active'"), nullable=False
+        ),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["subject_id"], ["study.subjects.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["auth.users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_focus_sessions")),

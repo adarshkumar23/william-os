@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import structlog
+
 from app.modules.calendar import native_service
 
 if TYPE_CHECKING:

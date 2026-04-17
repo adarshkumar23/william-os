@@ -16,6 +16,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from fpdf import FPDF
+from sqlalchemy import delete, func, select
+from sqlalchemy.inspection import inspect as sa_inspect
+
 from app.core.security import decrypt_text, encrypt_text
 from app.modules.audit.models import AuditAction, AuditLog
 from app.modules.auth.models import User, UserDevice
@@ -32,9 +36,6 @@ from app.modules.study.models import MockTest, RevisionCard, StudySession, Subje
 from app.modules.trading.models import PortfolioSnapshot, PriceAlert, TradeLog, Watchlist
 from app.modules.voice.models import VoiceCommand
 from app.shared.types import EncryptionError, NotFoundError, ValidationError
-from fpdf import FPDF
-from sqlalchemy import delete, func, select
-from sqlalchemy.inspection import inspect as sa_inspect
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -124,9 +125,7 @@ class ExportService:
 
     async def export_audit_csv(self, user_id: uuid.UUID) -> bytes:
         result = await self.db.execute(
-            select(AuditLog)
-            .where(AuditLog.user_id == user_id)
-            .order_by(AuditLog.created_at.desc())
+            select(AuditLog).where(AuditLog.user_id == user_id).order_by(AuditLog.created_at.desc())
         )
         rows = result.scalars().all()
 
@@ -247,7 +246,9 @@ class ExportService:
         summary = await self.get_data_summary(user_id)
         since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=safe_days)
 
-        recent_habit_checkins = await self._count_recent_habit_checkins(user_id=user_id, since=since)
+        recent_habit_checkins = await self._count_recent_habit_checkins(
+            user_id=user_id, since=since
+        )
         total_study_sessions = await self._count(StudySession, StudySession.user_id == user_id)
         total_workouts = await self._count(WorkoutLog, WorkoutLog.user_id == user_id)
         total_trades = await self._count(TradeLog, TradeLog.user_id == user_id)

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
-import uuid
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import redis.asyncio as redis
 import structlog
+from sqlalchemy import desc, func, select
+
 from app.core.config import get_settings
 from app.modules.auth.models import User
 from app.modules.decisions.models import Decision
@@ -24,7 +27,9 @@ from app.modules.scheduler.service import SchedulerService
 from app.modules.sleep.models import SleepDebt, SleepRecord
 from app.modules.study.models import MockTest, StudySession, Subject
 from app.modules.trading.models import PortfolioSnapshot, TradeLog
-from sqlalchemy import desc, func, select
+
+if TYPE_CHECKING:
+    import uuid
 
 logger = structlog.get_logger(__name__)
 
@@ -194,13 +199,11 @@ class PredictiveWarningService:
         plan = plan_result.scalar_one_or_none()
 
         if plan is None:
-            try:
+            with contextlib.suppress(Exception):
                 await self.scheduler.generate_daily_plan(
                     user_id=user_id,
                     request=ScheduleGenerateRequest(target_date=tomorrow),
                 )
-            except Exception:
-                pass
             plan_result = await self.db.execute(
                 select(DailyPlan)
                 .where(DailyPlan.user_id == user_id)

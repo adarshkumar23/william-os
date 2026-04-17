@@ -5,13 +5,12 @@ Validates each hardcoded cross-module intelligence rule.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.modules.intelligence.service import IntelligenceService
-
 
 BASELINE_SIGNALS = {
     ("sleep", "energy"): 90.0,
@@ -21,6 +20,7 @@ BASELINE_SIGNALS = {
     ("habits", "risk"): 0.0,
     ("journal", "mood"): 80.0,
 }
+
 
 class TestHardcodedCrossModuleRules:
     @pytest.mark.asyncio

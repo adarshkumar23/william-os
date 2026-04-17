@@ -6,11 +6,15 @@ Unit tests for watchlist, trade logging, portfolio calculation, and analysis.
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
+
 from app.modules.trading.schemas import TradeLogCreate, WatchlistCreate
 from app.modules.trading.service import TradingService
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

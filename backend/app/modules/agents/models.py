@@ -5,10 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from app.core.database import Base
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
 
 
 class AgentStatus(Base):

@@ -8,10 +8,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from app.core.database import Base
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
 
 
 class Subject(Base):
