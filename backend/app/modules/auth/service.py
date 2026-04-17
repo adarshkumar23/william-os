@@ -64,7 +64,7 @@ class AuthService:
         existing = await self.db.execute(
             select(User).where((User.email == data.email) | (User.username == data.username))
         )
-        if existing.scalar_one_or_none():
+        if existing.scalars().first():
             raise ValidationError("Email or username already registered")
 
         user = User(
